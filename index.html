@@ -1,0 +1,190 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <meta name="description" content="CutCue helps video editors choose music and create timestamped editing blueprints." />
+  <title>CutCue — Music Planning for Video Editors</title>
+  <link rel="stylesheet" href="style.css" />
+</head>
+<body>
+  <div class="app-shell">
+    <aside class="sidebar" id="sidebar">
+      <a class="brand" href="#" data-view-link="dashboard" aria-label="CutCue dashboard">
+        <span class="brand-mark" aria-hidden="true"><i></i><i></i><i></i></span>
+        <span><strong>CutCue</strong><small>Music planning workspace</small></span>
+      </a>
+
+      <nav class="nav-list" aria-label="Main navigation">
+        <button class="nav-item active" data-view="dashboard"><span>⌂</span>Dashboard</button>
+        <button class="nav-item" data-view="trackfit"><span>♪</span>TrackFit</button>
+        <button class="nav-item" data-view="syncblueprint"><span>⌁</span>SyncBlueprint</button>
+        <button class="nav-item" data-view="history"><span>↺</span>Blueprint History</button>
+      </nav>
+
+      <div class="speed-note">
+        <span class="status-dot"></span>
+        <div><strong>Fast planning mode</strong><small>Prototype results generate instantly.</small></div>
+      </div>
+
+      <div class="account-card">
+        <div class="avatar" id="sidebarAvatar">G</div>
+        <div><strong id="sidebarName">Guest editor</strong><small id="sidebarEmail">Sign in to save history</small></div>
+        <button class="icon-btn" id="accountButton" aria-label="Open account">•••</button>
+      </div>
+    </aside>
+
+    <main class="main-content">
+      <header class="topbar">
+        <button class="mobile-menu" id="mobileMenu" aria-label="Open menu">☰</button>
+        <div><p class="eyebrow" id="pageEyebrow">Workspace overview</p><h1 id="pageTitle">Plan the music before you edit.</h1></div>
+        <button class="button secondary" id="topAccountButton">Sign in</button>
+      </header>
+
+      <section class="view active" id="dashboardView">
+        <div class="hero-card">
+          <div class="hero-copy">
+            <span class="pill">Human-centered editing workflow</span>
+            <h2>Move from indecision to a usable edit plan.</h2>
+            <p><strong>TrackFit</strong> narrows the song decision. <strong>SyncBlueprint</strong> turns the selected track into timestamped editing suggestions.</p>
+            <div class="hero-actions">
+              <button class="button primary" data-go="trackfit">Find a fitting track</button>
+              <button class="button ghost" data-go="syncblueprint">Map a song I already chose</button>
+            </div>
+          </div>
+
+          <div class="hero-preview" aria-label="Editing timeline preview">
+            <div class="window-dots"><i></i><i></i><i></i></div>
+            <div class="time-row"><span>0:00</span><span>0:15</span><span>0:30</span><span>0:45</span></div>
+            <div class="waveform" aria-hidden="true">
+              <i style="height:22%"></i><i style="height:48%"></i><i style="height:72%"></i><i style="height:38%"></i><i style="height:88%"></i><i style="height:55%"></i><i style="height:96%"></i><i style="height:45%"></i><i style="height:76%"></i><i style="height:34%"></i><i style="height:86%"></i><i style="height:58%"></i><i style="height:92%"></i><i style="height:40%"></i><i style="height:70%"></i><i style="height:50%"></i><i style="height:82%"></i><i style="height:30%"></i><i style="height:67%"></i><i style="height:43%"></i>
+            </div>
+            <div class="preview-cues"><span style="left:14%">Cut</span><span style="left:43%">Crossfade</span><span style="left:72%">Flash</span></div>
+            <div class="playhead"></div>
+          </div>
+        </div>
+
+        <div class="stats-grid">
+          <article><span>Blueprints saved</span><strong id="blueprintCount">0</strong><small>Stored in this browser</small></article>
+          <article><span>Average setup</span><strong>&lt; 2 min</strong><small>Designed for quick decisions</small></article>
+          <article><span>Workflow</span><strong>2 steps</strong><small>TrackFit → SyncBlueprint</small></article>
+        </div>
+
+        <div class="section-heading"><div><p class="eyebrow">Core workflow</p><h2>Two focused tools, one connected process.</h2></div></div>
+        <div class="module-grid">
+          <article class="module-card">
+            <div class="module-icon">♪</div>
+            <div><span class="module-number">01</span><h3>TrackFit</h3><p>Describe the mood, pace, format, and structure you need. Receive three ranked options instead of an endless list.</p><ul><li>Guided creative brief</li><li>Ranked shortlist</li><li>One-click song commitment</li></ul><button class="text-button" data-go="trackfit">Open TrackFit →</button></div>
+          </article>
+          <article class="module-card">
+            <div class="module-icon">⌁</div>
+            <div><span class="module-number">02</span><h3>SyncBlueprint</h3><p>Generate prioritized timestamps with suggestions for cuts, transitions, effects, speed changes, and text.</p><ul><li>Priority cue map</li><li>Editable suggestions</li><li>Saved project history</li></ul><button class="text-button" data-go="syncblueprint">Open SyncBlueprint →</button></div>
+          </article>
+        </div>
+
+        <div class="section-heading compact"><div><p class="eyebrow">Continue working</p><h2>Recent blueprints</h2></div><button class="button ghost small" data-go="history">View all</button></div>
+        <div id="recentBlueprints" class="history-grid"></div>
+      </section>
+
+      <section class="view" id="trackfitView">
+        <div class="workspace-grid">
+          <form class="panel form-panel" id="trackfitForm">
+            <div class="panel-heading"><div><p class="eyebrow">Module 01</p><h2>Build your TrackFit brief</h2><p>Answer a few focused questions to generate a manageable shortlist.</p></div><span class="step-badge">1 of 2</span></div>
+            <div class="form-grid">
+              <label class="field full"><span>Project name</span><input id="projectName" type="text" placeholder="Night drive montage" required /></label>
+              <label class="field"><span>Video type</span><select id="videoType" required><option value="">Select a format</option><option value="cinematic">Cinematic montage</option><option value="sports">Sports / action</option><option value="travel">Travel edit</option><option value="gaming">Gaming edit</option><option value="social">Short-form social</option><option value="product">Product showcase</option><option value="emotional">Emotional story</option></select></label>
+              <label class="field"><span>Target duration</span><select id="targetDuration" required><option value="">Choose duration</option><option value="15">15 seconds</option><option value="30">30 seconds</option><option value="45">45 seconds</option><option value="60">60 seconds</option><option value="90">90 seconds</option><option value="120">2 minutes</option></select></label>
+
+              <fieldset class="field full choice-group"><legend>Desired mood</legend><div class="choice-pills">
+                <label><input type="radio" name="mood" value="uplifting" required /><span>Uplifting</span></label>
+                <label><input type="radio" name="mood" value="intense" /><span>Intense</span></label>
+                <label><input type="radio" name="mood" value="emotional" /><span>Emotional</span></label>
+                <label><input type="radio" name="mood" value="dreamy" /><span>Dreamy</span></label>
+                <label><input type="radio" name="mood" value="confident" /><span>Confident</span></label>
+                <label><input type="radio" name="mood" value="dark" /><span>Dark</span></label>
+              </div></fieldset>
+
+              <fieldset class="field full choice-group"><legend>Editing pace</legend><div class="segmented four">
+                <label><input type="radio" name="pace" value="slow" required /><span>Slow</span></label>
+                <label><input type="radio" name="pace" value="moderate" /><span>Moderate</span></label>
+                <label><input type="radio" name="pace" value="fast" /><span>Fast</span></label>
+                <label><input type="radio" name="pace" value="dynamic" /><span>Dynamic</span></label>
+              </div></fieldset>
+
+              <label class="field"><span>Vocal preference</span><select id="vocalStyle"><option value="either">No preference</option><option value="instrumental">Instrumental</option><option value="vocal">Vocals</option><option value="minimal">Minimal vocals</option></select></label>
+              <label class="field"><span>Structure preference</span><select id="structurePreference"><option value="clear">Clear drops and sections</option><option value="steady">Consistent rhythm</option><option value="build">Gradual build</option><option value="contrast">Strong contrast</option></select></label>
+              <label class="field full"><span>What should the music support?</span><textarea id="creativeIntent" rows="3" placeholder="A calm opening followed by a strong reveal near the middle."></textarea></label>
+            </div>
+            <div class="form-actions"><button class="button ghost" type="reset">Clear</button><button class="button primary" type="submit">Generate shortlist →</button></div>
+          </form>
+
+          <aside class="panel guidance-panel">
+            <div class="insight"><span>◎</span><div><h3>Decision guardrail</h3><p>TrackFit returns only three strong options so the tool reduces choice rather than adding more.</p></div></div>
+            <div class="steps"><div class="active"><span>1</span><div><strong>Describe the edit</strong><small>Define mood, pace, and structure.</small></div></div><div><span>2</span><div><strong>Compare three tracks</strong><small>Review fit and tradeoffs.</small></div></div><div><span>3</span><div><strong>Commit and continue</strong><small>Move directly into SyncBlueprint.</small></div></div></div>
+          </aside>
+        </div>
+
+        <section class="results-section hidden" id="trackfitResults">
+          <div class="section-heading"><div><p class="eyebrow">Your shortlist</p><h2>Three tracks with the strongest fit</h2><p>Select one to continue. The next step can begin automatically.</p></div><button class="button ghost small" id="rerunTrackfit">Adjust brief</button></div>
+          <div class="song-grid" id="songResults"></div>
+        </section>
+      </section>
+
+      <section class="view" id="syncblueprintView">
+        <div class="workspace-grid">
+          <form class="panel form-panel" id="blueprintForm">
+            <div class="panel-heading"><div><p class="eyebrow">Module 02</p><h2>Create a SyncBlueprint</h2><p>Turn a selected song into a practical timestamped editing plan.</p></div><span class="step-badge">2 of 2</span></div>
+            <div class="selected-track hidden" id="selectedTrackBanner"><div><small>Selected through TrackFit</small><strong id="selectedTrackName"></strong><span id="selectedTrackMeta"></span></div><button type="button" class="text-button" id="changeTrackButton">Change</button></div>
+            <div class="form-grid">
+              <label class="field full"><span>Song title</span><input id="blueprintSong" type="text" placeholder="Enter the selected song" required /></label>
+              <label class="field"><span>Song duration</span><div class="with-suffix"><input id="songDuration" type="number" min="10" max="600" value="60" required /><em>seconds</em></div></label>
+              <label class="field"><span>Music profile</span><select id="musicProfile"><option value="dynamic">Dynamic / varied</option><option value="steady">Steady rhythm</option><option value="build">Gradual build</option><option value="dramatic">Dramatic contrast</option><option value="soft">Soft / atmospheric</option></select></label>
+
+              <fieldset class="field full choice-group"><legend>Suggestion density</legend><div class="segmented three"><label><input type="radio" name="density" value="minimal" /><span>Minimal</span></label><label><input type="radio" name="density" value="balanced" checked /><span>Balanced</span></label><label><input type="radio" name="density" value="detailed" /><span>Detailed</span></label></div></fieldset>
+
+              <fieldset class="field full choice-group"><legend>Include suggestions for</legend><div class="check-grid">
+                <label><input type="checkbox" name="cueType" value="cut" checked /><span>Cuts</span></label>
+                <label><input type="checkbox" name="cueType" value="transition" checked /><span>Transitions</span></label>
+                <label><input type="checkbox" name="cueType" value="effect" checked /><span>Visual effects</span></label>
+                <label><input type="checkbox" name="cueType" value="speed" checked /><span>Speed changes</span></label>
+                <label><input type="checkbox" name="cueType" value="text" /><span>Text moments</span></label>
+              </div></fieldset>
+            </div>
+            <div class="form-actions"><button class="button ghost" type="button" id="loadDemoBlueprint">Load demo</button><button class="button primary" type="submit">Generate blueprint ⌁</button></div>
+          </form>
+
+          <aside class="panel guidance-panel">
+            <div class="insight"><span>⚡</span><div><h3>Fast by design</h3><p>This frontend prototype generates results instantly. A production backend can replace the rules engine with real audio analysis.</p></div></div>
+            <div class="legend"><h4>Priority levels</h4><div><i class="primary-dot"></i><strong>Primary</strong><small>Major structural moment</small></div><div><i class="secondary-dot"></i><strong>Secondary</strong><small>Useful rhythmic change</small></div><div><i class="optional-dot"></i><strong>Optional</strong><small>Extra creative opportunity</small></div></div>
+          </aside>
+        </div>
+
+        <section class="blueprint-output hidden" id="blueprintOutput">
+          <div class="blueprint-header"><div><p class="eyebrow">Generated SyncBlueprint</p><h2 id="outputTitle">Song blueprint</h2><p id="outputSummary"></p></div><div class="blueprint-actions"><button class="button ghost small" id="copyBlueprint">Copy notes</button><button class="button primary small" id="saveBlueprint">Save blueprint</button></div></div>
+          <div class="timeline-panel"><div class="timeline-top"><div><strong>Priority timeline</strong><small>Click any cue to edit it.</small></div><span id="cueCount">0 cues</span></div><div class="visual-timeline" id="visualTimeline"></div></div>
+          <div class="table-wrap"><table><thead><tr><th>Time</th><th>Priority</th><th>Musical moment</th><th>Suggested edit</th><th></th></tr></thead><tbody id="cueTableBody"></tbody></table></div>
+        </section>
+      </section>
+
+      <section class="view" id="historyView">
+        <div class="section-heading"><div><p class="eyebrow">Saved workspace</p><h2>Blueprint history</h2><p>Reopen plans generated in this browser.</p></div><button class="button danger small" id="clearHistory">Clear history</button></div>
+        <div id="historyList" class="history-grid"></div>
+      </section>
+    </main>
+  </div>
+
+  <div class="modal-backdrop hidden" id="handoffModal" role="dialog" aria-modal="true" aria-labelledby="handoffTitle">
+    <div class="modal"><button class="modal-close" data-close="handoffModal" aria-label="Close">×</button><div class="modal-icon">⌁</div><p class="eyebrow">Track selected</p><h2 id="handoffTitle">Create a SyncBlueprint now?</h2><p>Your selected track and project details are ready. Continue without re-entering the song.</p><div class="modal-track" id="handoffTrack"></div><div class="modal-actions"><button class="button ghost" data-close="handoffModal">Not now</button><button class="button primary" id="continueToBlueprint">Generate SyncBlueprint</button></div></div>
+  </div>
+
+  <div class="modal-backdrop hidden" id="accountModal" role="dialog" aria-modal="true" aria-labelledby="accountTitle">
+    <div class="modal"><button class="modal-close" data-close="accountModal" aria-label="Close">×</button>
+      <div id="signedOutAccount"><p class="eyebrow">Local account prototype</p><h2 id="accountTitle">Save your editing history</h2><p>Create a local test account. Credentials and blueprints remain in this browser.</p><form id="accountForm" class="account-form"><label class="field"><span>Name</span><input id="accountName" type="text" required placeholder="Your name" /></label><label class="field"><span>Email</span><input id="accountEmail" type="email" required placeholder="name@example.com" /></label><button class="button primary" type="submit">Create local account</button></form></div>
+      <div id="signedInAccount" class="hidden"><p class="eyebrow">Account</p><h2 id="signedInName"></h2><p id="signedInEmail"></p><div class="account-summary"><div><strong id="accountBlueprintCount">0</strong><span>Saved blueprints</span></div><div><strong>Local</strong><span>Storage mode</span></div></div><button class="button danger" id="signOutButton">Sign out</button></div>
+    </div>
+  </div>
+
+  <div class="toast hidden" id="toast" role="status" aria-live="polite"></div>
+  <script src="script.js"></script>
+</body>
+</html>
