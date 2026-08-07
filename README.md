@@ -1,1 +1,1 @@
-# SynthEdit
+# Syncora
