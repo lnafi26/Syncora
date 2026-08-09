@@ -12,7 +12,7 @@
 <body>
 	<div class="app-shell">
 		<aside class="sidebar" id="sidebar">
-		<a class="brand" href="#" data-view-link="dashboard" aria-label="Synchora dashboard">
+		<a class="brand" href="#" data-view-link="dashboard" aria-label="Synchora Launchpad">
 			<span class="brand-mark" aria-hidden="true"><i></i><i></i><i></i></span>
 			<span><strong>Synchora</strong><small>Music planning workspace</small></span>
 		</a>
@@ -67,7 +67,7 @@
 			</div>
 
 			<div class="stats-grid">
-			<article><span>Blueprints saved</span><strong id="blueprintCount">0</strong><small>Stored in this browser</small></article>
+			<article><span>Signals captured</span><strong id="blueprintCount">0</strong><small>Stored in this browser</small></article>
 			<article><span>Average setup</span><strong>&lt; 2 min</strong><small>Designed for quick decisions</small></article>
 			<article><span>Workflow</span><strong>2 steps</strong><small>Nova → Pulsar</small></article>
 			</div>
@@ -152,7 +152,7 @@
 					<label><input type="checkbox" name="cueType" value="text" /><span>Text moments</span></label>
 				</div></fieldset>
 				</div>
-				<div class="form-actions"><button class="button ghost" type="button" id="loadDemoBlueprint">Load demo</button><button class="button primary" type="submit">Generate Signal ⌁</button></div>
+				<div class="form-actions"><button class="button ghost" type="button" id="loadDemoBlueprint">Load demo</button><button class="button primary" type="submit">Capture Signal ⌁</button></div>
 			</form>
 
 			<aside class="panel guidance-panel">
@@ -162,27 +162,27 @@
 			</div>
 
 			<section class="blueprint-output hidden" id="blueprintOutput">
-			<div class="blueprint-header"><div><p class="eyebrow">Generated Signal</p><h2 id="outputTitle">Song blueprint</h2><p id="outputSummary"></p></div><div class="blueprint-actions"><button class="button ghost small" id="copyBlueprint">Copy notes</button><button class="button primary small" id="saveBlueprint">Save blueprint</button></div></div>
+			<div class="blueprint-header"><div><p class="eyebrow">Generated Signal</p><h2 id="outputTitle">Signal</h2><p id="outputSummary"></p></div><div class="blueprint-actions"><button class="button ghost small" id="copyBlueprint">Copy notes</button><button class="button primary small" id="saveBlueprint">Capture Signal</button></div></div>
 			<div class="timeline-panel"><div class="timeline-top"><div><strong>Priority timeline</strong><small>Click any cue to edit it.</small></div><span id="cueCount">0 cues</span></div><div class="visual-timeline" id="visualTimeline"></div></div>
 			<div class="table-wrap"><table><thead><tr><th>Time</th><th>Priority</th><th>Musical moment</th><th>Suggested edit</th><th></th></tr></thead><tbody id="cueTableBody"></tbody></table></div>
 			</section>
 		</section>
 
 		<section class="view" id="historyView">
-			<div class="section-heading"><div><p class="eyebrow">Saved Signals</p><h2>Echoes</h2><p>Revisit Signals generated during previous sessions.</p></div><button class="button danger small" id="clearHistory">Clear history</button></div>
+			<div class="section-heading"><div><p class="eyebrow">Saved Signals</p><h2>Echoes</h2><p>Revisit Signals captured during previous sessions.</p></div><button class="button danger small" id="clearHistory">Clear history</button></div>
 			<div id="historyList" class="history-grid"></div>
 		</section>
 		</main>
 	</div>
 
 	<div class="modal-backdrop hidden" id="handoffModal" role="dialog" aria-modal="true" aria-labelledby="handoffTitle">
-		<div class="modal"><button class="modal-close" data-close="handoffModal" aria-label="Close">×</button><div class="modal-icon">⌁</div><p class="eyebrow">Track selected</p><h2 id="handoffTitle">Create a Signal now?</h2><p>Your selected track and project details are ready. Continue without re-entering the song.</p><div class="modal-track" id="handoffTrack"></div><div class="modal-actions"><button class="button ghost" data-close="handoffModal">Not now</button><button class="button primary" id="continueToBlueprint">Generate Signal</button></div></div>
+		<div class="modal"><button class="modal-close" data-close="handoffModal" aria-label="Close">×</button><div class="modal-icon">⌁</div><p class="eyebrow">Track selected</p><h2 id="handoffTitle">Create a Signal now?</h2><p>Your selected track and project details are ready. Continue without re-entering the song.</p><div class="modal-track" id="handoffTrack"></div><div class="modal-actions"><button class="button ghost" data-close="handoffModal">Not now</button><button class="button primary" id="continueToBlueprint">Capture Signal</button></div></div>
 	</div>
 
 	<div class="modal-backdrop hidden" id="accountModal" role="dialog" aria-modal="true" aria-labelledby="accountTitle">
 		<div class="modal"><button class="modal-close" data-close="accountModal" aria-label="Close">×</button>
-		<div id="signedOutAccount"><p class="eyebrow">Local account prototype</p><h2 id="accountTitle">Save your editing history</h2><p>Create a local test account. Credentials and blueprints remain in this browser.</p><form id="accountForm" class="account-form"><label class="field"><span>Name</span><input id="accountName" type="text" required placeholder="Your name" /></label><label class="field"><span>Email</span><input id="accountEmail" type="email" required placeholder="name@example.com" /></label><button class="button primary" type="submit">Create local account</button></form></div>
-		<div id="signedInAccount" class="hidden"><p class="eyebrow">Account</p><h2 id="signedInName"></h2><p id="signedInEmail"></p><div class="account-summary"><div><strong id="accountBlueprintCount">0</strong><span>Saved blueprints</span></div><div><strong>Local</strong><span>Storage mode</span></div></div><button class="button danger" id="signOutButton">Sign out</button></div>
+		<div id="signedOutAccount"><p class="eyebrow">Local account prototype</p><h2 id="accountTitle">Save your editing history</h2><p>Create a local test account. Credentials and Signals remain in this browser.</p><form id="accountForm" class="account-form"><label class="field"><span>Name</span><input id="accountName" type="text" required placeholder="Your name" /></label><label class="field"><span>Email</span><input id="accountEmail" type="email" required placeholder="name@example.com" /></label><button class="button primary" type="submit">Create local account</button></form></div>
+		<div id="signedInAccount" class="hidden"><p class="eyebrow">Account</p><h2 id="signedInName"></h2><p id="signedInEmail"></p><div class="account-summary"><div><strong id="accountBlueprintCount">0</strong><span>Captured Signals</span></div><div><strong>Local</strong><span>Storage mode</span></div></div><button class="button danger" id="signOutButton">Sign out</button></div>
 		</div>
 	</div>
 
