@@ -5,10 +5,25 @@ let selectedTrack = null;
 let currentBlueprint = null;
 
 const pageInfo = {
-    dashboard: ["Workspace overview", "Plan the music before you edit."],
-    nova: ["Nova", "Find a track that fits your edit."],
-    pulsar: ["Pulsar", "Turn a song into an editing blueprint."],
-    history: ["Blueprint history", "Return to your previous editing plans."]
+    dashboard: [
+        "Launchpad",
+        "Plan the music before you edit."
+    ],
+
+    nova: [
+        "Nova",
+        "Find the track that fits."
+    ],
+
+    pulsar: [
+        "Pulsar",
+        "Capture your song's Signal."
+    ],
+
+    history: [
+        "Echoes",
+        "Return to your captured Signals."
+    ]
 };
 
 // Fake songs for the prototype only
@@ -596,7 +611,7 @@ $("#saveBlueprint")?.addEventListener("click", () => {
     updateHistory();
 
     showToast(
-        "Blueprint saved."
+        "Signal captured."
     );
 });
 
@@ -620,7 +635,7 @@ $("#copyBlueprint")?.addEventListener("click", async () => {
         );
 
         showToast(
-        "Blueprint copied."
+        "Signal cloned."
         );
     }
     catch {
@@ -667,11 +682,11 @@ function renderHistoryInto(container, items) {
             <div>
 
             <strong>
-                No saved blueprints yet
+                No Echoes yet
             </strong>
 
             <p>
-                Save a Pulsar blueprint and it will appear here.
+                Capture a Signal and it will appear here.
             </p>
 
             </div>
@@ -913,6 +928,35 @@ function capitalize(text) {
     );
 }
 
+// =====================================================
+// INTERACTION POLISH
+// =====================================================
+
+// Add material separation to the floating top bar once scrolling begins
+window.addEventListener("scroll", () => {
+    $(".topbar")?.classList.toggle(
+        "scrolled",
+        window.scrollY > 8
+    );
+});
+
+// Clicking the dimmed area dismisses a modal
+$$(".modal-backdrop").forEach(backdrop => {
+    backdrop.addEventListener("click", event => {
+        if (event.target === backdrop) {
+            backdrop.classList.add("hidden");
+        }
+    });
+});
+
+// Escape also dismisses open modals
+document.addEventListener("keydown", event => {
+    if (event.key === "Escape") {
+        $$(".modal-backdrop").forEach(modal => {
+            modal.classList.add("hidden");
+        });
+    }
+});
 
 // =====================================================
 // INITIAL SETUP
