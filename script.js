@@ -1,3 +1,26 @@
+const SUPABASE_URL = 'https://phxusxkhzxllrioxuzkr.supabase.co'
+const SUPABASE_KEY = 'sb_publishable_3GHRzFe9g3kgcvTaeTBtyQ_GDih979C'
+
+const db = supabase.createClient(
+    SUPABASE_URL,
+    SUPABASE_KEY
+)
+
+async function testSupabaseConnection() {
+    const { data, error } = await db
+        .from('connection_test')
+        .select('*')
+
+    if (error) {
+        console.error('Supabase connection failed:', error)
+        return
+    }
+
+    console.log('Supabase connected!', data)
+}
+
+testSupabaseConnection()
+
 const $ = (selector) => document.querySelector(selector);
 const $$ = (selector) => [...document.querySelectorAll(selector)];
 
