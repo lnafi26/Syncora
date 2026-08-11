@@ -1569,3 +1569,40 @@ tbody tr:hover {
     }
 
 }
+
+/* ----------------------------------------------------------
+   SUPABASE ACCOUNT AUTH
+   ---------------------------------------------------------- */
+
+.account-auth-actions {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 9px;
+    margin-top: 4px;
+}
+
+.account-auth-actions .button {
+    width: 100%;
+}
+
+.auth-message {
+    min-height: 1.25rem;
+    margin: 2px 0 0;
+    color: var(--muted);
+    font-size: .72rem;
+    line-height: 1.45;
+}
+
+.auth-message.error {
+    color: #ffb7b7;
+}
+
+.auth-message.success {
+    color: #dfffc0;
+}
+
+@media (max-width: 480px) {
+    .account-auth-actions {
+        grid-template-columns: 1fr;
+    }
+}

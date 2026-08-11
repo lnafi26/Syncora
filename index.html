@@ -67,7 +67,7 @@
 			</div>
 
 			<div class="stats-grid">
-			<article><span>Signals captured</span><strong id="blueprintCount">0</strong><small>Stored in this browser</small></article>
+			<article><span>Signals captured</span><strong id="blueprintCount">0</strong><small>Saved to your account</small></article>
 			<article><span>Average setup</span><strong>&lt; 2 min</strong><small>Designed for quick decisions</small></article>
 			<article><span>Workflow</span><strong>2 steps</strong><small>Nova → Pulsar</small></article>
 			</div>
@@ -179,14 +179,53 @@
 		<div class="modal"><button class="modal-close" data-close="handoffModal" aria-label="Close">×</button><div class="modal-icon">⌁</div><p class="eyebrow">Track selected</p><h2 id="handoffTitle">Create a Signal now?</h2><p>Your selected track and project details are ready. Continue without re-entering the song.</p><div class="modal-track" id="handoffTrack"></div><div class="modal-actions"><button class="button ghost" data-close="handoffModal">Not now</button><button class="button primary" id="continueToBlueprint">Capture Signal</button></div></div>
 	</div>
 
-	<div class="modal-backdrop hidden" id="accountModal" role="dialog" aria-modal="true" aria-labelledby="accountTitle">
-		<div class="modal"><button class="modal-close" data-close="accountModal" aria-label="Close">×</button>
-		<div id="signedOutAccount"><p class="eyebrow">Local account prototype</p><h2 id="accountTitle">Save your editing history</h2><p>Create a local test account. Credentials and Signals remain in this browser.</p><form id="accountForm" class="account-form"><label class="field"><span>Name</span><input id="accountName" type="text" required placeholder="Your name" /></label><label class="field"><span>Email</span><input id="accountEmail" type="email" required placeholder="name@example.com" /></label><button class="button primary" type="submit">Create local account</button></form></div>
-		<div id="signedInAccount" class="hidden"><p class="eyebrow">Account</p><h2 id="signedInName"></h2><p id="signedInEmail"></p><div class="account-summary"><div><strong id="accountBlueprintCount">0</strong><span>Captured Signals</span></div><div><strong>Local</strong><span>Storage mode</span></div></div><button class="button danger" id="signOutButton">Sign out</button></div>
+	<div class="modal-backdrop hidden" id="accountModal" role="dialog" aria-modal="true" aria-label="Synchora account">
+		<div class="modal">
+			<button class="modal-close" data-close="accountModal" aria-label="Close">×</button>
+
+			<div id="signedOutAccount">
+				<p class="eyebrow">Synchora account</p>
+				<h2>Sign in to Synchora</h2>
+				<p>Sign in to keep your Synchora account connected across sessions.</p>
+
+				<form id="accountForm" class="account-form">
+					<label class="field">
+						<span>Email</span>
+						<input id="accountEmail" type="email" required autocomplete="email" placeholder="name@example.com" />
+					</label>
+
+					<label class="field">
+						<span>Password</span>
+						<input id="accountPassword" type="password" required minlength="6" autocomplete="current-password" placeholder="Enter your password" />
+					</label>
+
+					<div class="account-auth-actions">
+						<button class="button primary" type="submit" id="accountLoginButton">Log in</button>
+						<button class="button ghost" type="button" id="accountSignupButton">Create account</button>
+					</div>
+
+					<p class="auth-message" id="accountAuthMessage" role="status" aria-live="polite"></p>
+				</form>
+			</div>
+
+			<div id="signedInAccount" class="hidden">
+				<p class="eyebrow">Account</p>
+				<h2 id="signedInName">Signed in</h2>
+				<p id="signedInEmail"></p>
+
+				<div class="account-summary">
+					<div><strong id="accountBlueprintCount">0</strong><span>Captured Signals</span></div>
+					<div><strong>Supabase</strong><span>Authentication</span></div>
+				</div>
+
+				<button class="button danger" id="signOutButton">Log out</button>
+			</div>
 		</div>
 	</div>
 
 	<div class="toast hidden" id="toast" role="status" aria-live="polite"></div>
+
+
 	<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 	<script src="script.js"></script>
 </body>
