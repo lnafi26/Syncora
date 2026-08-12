@@ -210,10 +210,6 @@ async function signUp() {
         authPasswordInput?.value || "";
 
 
-    // -----------------------------
-    // Basic validation
-    // -----------------------------
-
     if (!email || !password) {
 
         setAuthMessage(
@@ -264,10 +260,6 @@ async function signUp() {
             });
 
 
-        // -----------------------------
-        // Supabase returned an error
-        // -----------------------------
-
         if (error) {
 
             const message =
@@ -276,8 +268,6 @@ async function signUp() {
                 "";
 
 
-            // This usually appears when
-            // email confirmation is disabled.
             if (
                 message.includes(
                     "already registered"
@@ -342,17 +332,6 @@ async function signUp() {
         }
 
 
-        // -----------------------------
-        // DUPLICATE ACCOUNT DETECTION
-        //
-        // With email confirmation enabled,
-        // Supabase may return a fake user
-        // instead of "already registered".
-        //
-        // The fake duplicate response can
-        // contain an empty identities array.
-        // -----------------------------
-
         const identities =
             data?.user?.identities;
 
@@ -379,13 +358,6 @@ async function signUp() {
         }
 
 
-        // -----------------------------
-        // Account immediately signed in
-        //
-        // This would happen if email
-        // confirmation were disabled.
-        // -----------------------------
-
         if (data?.session) {
 
             setAuthMessage();
@@ -404,11 +376,6 @@ async function signUp() {
             return;
         }
 
-
-        // -----------------------------
-        // Genuine new account awaiting
-        // email verification
-        // -----------------------------
 
         if (
             data?.user &&
@@ -431,10 +398,6 @@ async function signUp() {
             return;
         }
 
-
-        // -----------------------------
-        // Unexpected response fallback
-        // -----------------------------
 
         setAuthMessage(
             "We couldn't confirm whether your account was created. Please try again.",
@@ -651,6 +614,7 @@ let currentBlueprint = null;
 
 let currentNovaSessionId = null;
 
+
 // =====================================================
 // PAGE INFORMATION
 // =====================================================
@@ -681,203 +645,18 @@ const pageInfo = {
 
 
 // =====================================================
-// FAKE SONGS FOR THE PROTOTYPE ONLY
+// NOVA API CONFIGURATION
 // =====================================================
 
-const songs = [
+const SYNCORA_API_URL =
+    "http://127.0.0.1:8000";
 
-    {
-        title:
-            "Afterglow Circuit",
+const NOVA_REQUEST_TIMEOUT_MS =
+    120000;
 
-        artist:
-            "Nova Vale",
+let currentNovaProfile = null;
 
-        mood:
-            "dreamy",
-
-        pace:
-            "moderate",
-
-        type:
-            "cinematic",
-
-        bpm:
-            112,
-
-        editability:
-            92,
-
-        energy:
-            "Rising",
-
-        colors: [
-            "#3d72ff",
-            "#8d59ff"
-        ]
-    },
-
-
-    {
-        title:
-            "Signal Rush",
-
-        artist:
-            "Kairo Frame",
-
-        mood:
-            "intense",
-
-        pace:
-            "fast",
-
-        type:
-            "sports",
-
-        bpm:
-            148,
-
-        editability:
-            96,
-
-        energy:
-            "Explosive",
-
-        colors: [
-            "#ff6b4a",
-            "#ffcb57"
-        ]
-    },
-
-
-    {
-        title:
-            "Still Between Us",
-
-        artist:
-            "Mara Sol",
-
-        mood:
-            "emotional",
-
-        pace:
-            "slow",
-
-        type:
-            "emotional",
-
-        bpm:
-            78,
-
-        editability:
-            86,
-
-        energy:
-            "Gradual",
-
-        colors: [
-            "#395c7b",
-            "#b778ad"
-        ]
-    },
-
-
-    {
-        title:
-            "Midnight Architecture",
-
-        artist:
-            "Vector Bloom",
-
-        mood:
-            "dark",
-
-        pace:
-            "dynamic",
-
-        type:
-            "gaming",
-
-        bpm:
-            124,
-
-        editability:
-            90,
-
-        energy:
-            "Layered",
-
-        colors: [
-            "#10143f",
-            "#7652a8"
-        ]
-    },
-
-
-    {
-        title:
-            "Open Horizon",
-
-        artist:
-            "Elio North",
-
-        mood:
-            "uplifting",
-
-        pace:
-            "moderate",
-
-        type:
-            "travel",
-
-        bpm:
-            98,
-
-        editability:
-            88,
-
-        energy:
-            "Warm",
-
-        colors: [
-            "#3b8e8a",
-            "#e0a758"
-        ]
-    },
-
-
-    {
-        title:
-            "Velocity Bloom",
-
-        artist:
-            "Rin Atlas",
-
-        mood:
-            "confident",
-
-        pace:
-            "fast",
-
-        type:
-            "social",
-
-        bpm:
-            136,
-
-        editability:
-            93,
-
-        energy:
-            "Driving",
-
-        colors: [
-            "#42b883",
-            "#245d82"
-        ]
-    }
-
-];
+let novaRequestController = null;
 
 
 // =====================================================
@@ -985,11 +764,14 @@ $("#mobileMenu")
         }
     );
 
+
 // =====================================================
 // NOVA DATABASE
 // =====================================================
 
-async function saveNovaSession(rankedSongs) {
+async function saveNovaSession(
+    rankedSongs
+) {
 
     const {
         data: { user },
@@ -998,17 +780,20 @@ async function saveNovaSession(rankedSongs) {
 
 
     if (userError) {
+
         console.error(
             "Could not get current user:",
             userError
+        );
+
+        showToast(
+            "Nova generated, but your account could not be verified."
         );
 
         return null;
     }
 
 
-    // Guests can still use Nova,
-    // but their generation is not saved.
     if (!user) {
         return null;
     }
@@ -1025,10 +810,6 @@ async function saveNovaSession(rankedSongs) {
             'input[name="pace"]:checked'
         )?.value;
 
-
-    // ---------------------------------------------
-    // Create the parent Nova session
-    // ---------------------------------------------
 
     const {
         data: novaSession,
@@ -1089,7 +870,7 @@ async function saveNovaSession(rankedSongs) {
         );
 
         showToast(
-            "Nova generated, but could not be saved."
+            "Nova generated, but the session could not be saved."
         );
 
         return null;
@@ -1100,19 +881,15 @@ async function saveNovaSession(rankedSongs) {
         novaSession.id;
 
 
-    // ---------------------------------------------
-    // Create the three recommendation rows
-    // ---------------------------------------------
-
     const recommendations =
         rankedSongs.map(
-            (song, index) => ({
+            song => ({
 
                 nova_session_id:
                     currentNovaSessionId,
 
                 rank:
-                    index + 1,
+                    song.rank,
 
                 title:
                     song.title,
@@ -1121,13 +898,13 @@ async function saveNovaSession(rankedSongs) {
                     song.artist,
 
                 bpm:
-                    song.bpm,
+                    null,
 
                 editability:
-                    song.editability,
+                    null,
 
                 energy:
-                    song.energy,
+                    null,
 
                 match_score:
                     song.score
@@ -1154,11 +931,25 @@ async function saveNovaSession(rankedSongs) {
             recommendationError
         );
 
+
+        await db
+            .from("nova_sessions")
+            .delete()
+            .eq(
+                "id",
+                currentNovaSessionId
+            );
+
+
+        currentNovaSessionId =
+            null;
+
+
         showToast(
-            "Nova session saved, but recommendations could not be saved."
+            "Nova generated, but the recommendations could not be saved."
         );
 
-        return currentNovaSessionId;
+        return null;
     }
 
 
@@ -1170,6 +961,7 @@ async function saveNovaSession(rankedSongs) {
 
     return currentNovaSessionId;
 }
+
 
 async function saveSelectedNovaTrack() {
 
@@ -1196,10 +988,10 @@ async function saveSelectedNovaTrack() {
                 selectedTrack.artist,
 
             selected_track_bpm:
-                selectedTrack.bpm,
+                null,
 
             selected_track_energy:
-                selectedTrack.energy,
+                null,
 
             selected_track_score:
                 selectedTrack.score
@@ -1219,6 +1011,10 @@ async function saveSelectedNovaTrack() {
             error
         );
 
+        showToast(
+            "Track selected, but the selection could not be saved."
+        );
+
         return;
     }
 
@@ -1228,6 +1024,805 @@ async function saveSelectedNovaTrack() {
         selectedTrack.title
     );
 }
+
+
+// =====================================================
+// NOVA API HELPERS
+// =====================================================
+
+function getSelectedOptionText(
+    selector
+) {
+
+    const element =
+        $(selector);
+
+
+    return (
+        element
+            ?.selectedOptions?.[0]
+            ?.textContent
+            ?.trim()
+        ||
+        element
+            ?.value
+        ||
+        ""
+    );
+
+}
+
+
+function getCheckedChoiceText(
+    name
+) {
+
+    const input =
+        $(
+            `input[name="${name}"]:checked`
+        );
+
+
+    return (
+        input
+            ?.nextElementSibling
+            ?.textContent
+            ?.trim()
+        ||
+        input
+            ?.value
+        ||
+        ""
+    );
+
+}
+
+
+function buildNovaRequestPayload() {
+
+    return {
+
+        project_name:
+            $("#projectName")
+                .value
+                .trim(),
+
+        video_type:
+            getSelectedOptionText(
+                "#videoType"
+            ),
+
+        target_duration_seconds:
+            Number(
+                $("#targetDuration")
+                    .value
+            ),
+
+        mood:
+            getCheckedChoiceText(
+                "mood"
+            ),
+
+        pace:
+            getCheckedChoiceText(
+                "pace"
+            ),
+
+        vocal_style:
+            getSelectedOptionText(
+                "#vocalStyle"
+            ),
+
+        structure_preference:
+            getSelectedOptionText(
+                "#structurePreference"
+            ),
+
+        creative_intent:
+            $("#creativeIntent")
+                .value
+                .trim()
+
+    };
+
+}
+
+
+function getNovaApiErrorMessage(
+    response,
+    data
+) {
+
+    const detail =
+        data?.detail;
+
+
+    if (
+        detail &&
+        typeof detail === "object"
+    ) {
+
+        if (detail.error) {
+            return detail.error;
+        }
+
+
+        if (detail.message) {
+            return detail.message;
+        }
+
+    }
+
+
+    if (
+        typeof detail === "string"
+    ) {
+        return detail;
+    }
+
+
+    if (
+        response.status === 422
+    ) {
+
+        return (
+            "Nova could not use one or more fields in the brief."
+        );
+
+    }
+
+
+    if (
+        response.status === 504
+    ) {
+
+        return (
+            "Nova took too long to build the music profile."
+        );
+
+    }
+
+
+    if (
+        response.status >= 500
+    ) {
+
+        return (
+            "Nova's recommendation service is temporarily unavailable."
+        );
+
+    }
+
+
+    return (
+        `Nova request failed with status ${response.status}.`
+    );
+
+}
+
+
+async function fetchNovaRecommendations(
+    payload
+) {
+
+    novaRequestController =
+        new AbortController();
+
+
+    const timeoutId =
+        window.setTimeout(
+            () => {
+
+                novaRequestController
+                    ?.abort();
+
+            },
+
+            NOVA_REQUEST_TIMEOUT_MS
+        );
+
+
+    try {
+
+        const response =
+            await fetch(
+                `${SYNCORA_API_URL}/nova/recommend`,
+                {
+                    method:
+                        "POST",
+
+                    headers: {
+                        "Content-Type":
+                            "application/json"
+                    },
+
+                    body:
+                        JSON.stringify(
+                            payload
+                        ),
+
+                    signal:
+                        novaRequestController
+                            .signal
+                }
+            );
+
+
+        let data =
+            null;
+
+
+        try {
+
+            data =
+                await response.json();
+
+        }
+
+        catch (parseError) {
+
+            console.error(
+                "Nova returned invalid JSON:",
+                parseError
+            );
+
+        }
+
+
+        if (!response.ok) {
+
+            throw new Error(
+                getNovaApiErrorMessage(
+                    response,
+                    data
+                )
+            );
+
+        }
+
+
+        if (
+            !data ||
+            !Array.isArray(
+                data.recommendations
+            ) ||
+            data.recommendations.length !== 3
+        ) {
+
+            throw new Error(
+                "Nova returned an incomplete shortlist."
+            );
+
+        }
+
+
+        return data;
+
+    }
+
+    catch (error) {
+
+        if (
+            error?.name ===
+            "AbortError"
+        ) {
+
+            throw new Error(
+                "Nova took too long to respond. Please try again."
+            );
+
+        }
+
+
+        if (
+            error instanceof TypeError
+        ) {
+
+            throw new Error(
+                "Could not reach the Syncora backend. Make sure FastAPI is running."
+            );
+
+        }
+
+
+        throw error;
+
+    }
+
+    finally {
+
+        window.clearTimeout(
+            timeoutId
+        );
+
+
+        novaRequestController =
+            null;
+
+    }
+
+}
+
+
+function escapeHtml(
+    value
+) {
+
+    return String(
+        value ?? ""
+    )
+        .replaceAll(
+            "&",
+            "&amp;"
+        )
+        .replaceAll(
+            "<",
+            "&lt;"
+        )
+        .replaceAll(
+            ">",
+            "&gt;"
+        )
+        .replaceAll(
+            '"',
+            "&quot;"
+        )
+        .replaceAll(
+            "'",
+            "&#039;"
+        );
+
+}
+
+
+function safeLastfmUrl(
+    value
+) {
+
+    if (!value) {
+        return null;
+    }
+
+
+    try {
+
+        const url =
+            new URL(
+                value
+            );
+
+
+        const isLastfmHost =
+            url.hostname ===
+                "last.fm"
+            ||
+            url.hostname.endsWith(
+                ".last.fm"
+            );
+
+
+        if (
+            url.protocol !==
+                "https:"
+            ||
+            !isLastfmHost
+        ) {
+
+            return null;
+
+        }
+
+
+        return url.href;
+
+    }
+
+    catch {
+
+        return null;
+
+    }
+
+}
+
+
+function makeSongColors(
+    title,
+    artist
+) {
+
+    const seed =
+        `${title}|${artist}`;
+
+
+    let hash =
+        0;
+
+
+    for (
+        let index = 0;
+        index < seed.length;
+        index += 1
+    ) {
+
+        hash =
+            (
+                (
+                    hash * 31
+                )
+                +
+                seed.charCodeAt(
+                    index
+                )
+            )
+            >>> 0;
+
+    }
+
+
+    const hueA =
+        hash % 360;
+
+
+    const hueB =
+        (
+            hueA
+            +
+            48
+            +
+            (
+                hash % 72
+            )
+        )
+        %
+        360;
+
+
+    return [
+        `hsl(${hueA} 58% 34%)`,
+        `hsl(${hueB} 62% 26%)`
+    ];
+
+}
+
+
+function semanticFitLabel(
+    fit
+) {
+
+    if (
+        fit === null ||
+        fit === undefined
+    ) {
+
+        return "Unavailable";
+
+    }
+
+
+    if (fit >= 0.82) {
+        return "Very strong";
+    }
+
+
+    if (fit >= 0.65) {
+        return "Strong";
+    }
+
+
+    if (fit >= 0.45) {
+        return "Moderate";
+    }
+
+
+    return "Light";
+
+}
+
+
+function normalizeNovaRecommendations(
+    data
+) {
+
+    return data
+        .recommendations
+        .map(
+            (
+                recommendation,
+                index
+            ) => {
+
+                const score =
+                    Number(
+                        recommendation
+                            .match_score
+                    );
+
+
+                const semanticFit =
+                    recommendation
+                        .semantic_fit ===
+                        null
+                    ||
+                    recommendation
+                        .semantic_fit ===
+                        undefined
+
+                        ? null
+
+                        : Number(
+                            recommendation
+                                .semantic_fit
+                        );
+
+
+                const matchedTags =
+                    Array.isArray(
+                        recommendation
+                            .matched_tags
+                    )
+
+                        ? recommendation
+                            .matched_tags
+                            .filter(
+                                tag =>
+                                    typeof tag ===
+                                    "string"
+                            )
+
+                        : [];
+
+
+                const topTags =
+                    Array.isArray(
+                        recommendation
+                            .top_lastfm_tags
+                    )
+
+                        ? recommendation
+                            .top_lastfm_tags
+                            .map(
+                                tag =>
+                                    tag?.name
+                            )
+                            .filter(
+                                tag =>
+                                    typeof tag ===
+                                    "string"
+                            )
+
+                        : [];
+
+
+                return {
+
+                    rank:
+                        Number(
+                            recommendation.rank
+                        )
+                        ||
+                        index + 1,
+
+                    title:
+                        recommendation.title
+                        ||
+                        "Unknown track",
+
+                    artist:
+                        recommendation.artist
+                        ||
+                        "Unknown artist",
+
+                    score:
+                        Number.isFinite(
+                            score
+                        )
+                            ? score
+                            : 0,
+
+                    reason:
+                        recommendation.reason
+                        ||
+                        "Ranked highly for this Nova brief.",
+
+                    matchedTags,
+
+                    topTags,
+
+                    semanticSimilarity:
+                        recommendation
+                            .semantic_similarity,
+
+                    semanticFit,
+
+                    semanticLabel:
+                        semanticFitLabel(
+                            semanticFit
+                        ),
+
+                    scoreBreakdown:
+                        recommendation
+                            .score_breakdown
+                        ||
+                        {},
+
+                    lastfmUrl:
+                        safeLastfmUrl(
+                            recommendation
+                                .lastfm_url
+                        ),
+
+                    mbid:
+                        recommendation.mbid
+                        ||
+                        null,
+
+                    colors:
+                        makeSongColors(
+                            recommendation.title,
+                            recommendation.artist
+                        )
+
+                };
+
+            }
+        );
+
+}
+
+
+function setNovaLoading(
+    isLoading
+) {
+
+    const submitButton =
+        $("#novaSubmitButton");
+
+
+    if (!submitButton) {
+        return;
+    }
+
+
+    if (isLoading) {
+
+        submitButton.disabled =
+            true;
+
+
+        submitButton.dataset
+            .defaultLabel =
+            submitButton.textContent;
+
+
+        submitButton.textContent =
+            "Nova is building your shortlist…";
+
+    }
+
+    else {
+
+        submitButton.disabled =
+            false;
+
+
+        submitButton.textContent =
+            submitButton.dataset
+                .defaultLabel
+            ||
+            "Generate shortlist →";
+
+    }
+
+}
+
+
+function renderNovaLoading() {
+
+    $("#songResults").innerHTML =
+        Array.from(
+            {
+                length:
+                    3
+            },
+
+            (
+                _,
+                index
+            ) => `
+                <article
+                    class="song-card nova-loading-card"
+                    aria-hidden="true"
+                >
+
+                    <div class="song-art nova-loading-art">
+                        <span class="match-badge">
+                            Option ${index + 1}
+                        </span>
+                    </div>
+
+                    <div class="song-body">
+
+                        <div class="nova-loading-line wide"></div>
+                        <div class="nova-loading-line medium"></div>
+
+                        <div class="song-details">
+                            <div class="nova-loading-block"></div>
+                            <div class="nova-loading-block"></div>
+                            <div class="nova-loading-block"></div>
+                        </div>
+
+                        <div class="nova-loading-line wide"></div>
+                        <div class="nova-loading-line medium"></div>
+
+                    </div>
+
+                </article>
+            `
+        )
+        .join("");
+
+
+    $("#novaResults")
+        .classList
+        .remove("hidden");
+
+
+    $("#novaResults")
+        .scrollIntoView({
+            behavior:
+                "smooth"
+        });
+
+}
+
+
+function renderNovaError(
+    message
+) {
+
+    $("#songResults").innerHTML =
+        `
+            <div class="nova-error-card">
+
+                <strong>
+                    Nova couldn't build the shortlist.
+                </strong>
+
+                <p>
+                    ${escapeHtml(message)}
+                </p>
+
+                <button
+                    class="button primary"
+                    id="retryNovaButton"
+                    type="button"
+                >
+                    Try again
+                </button>
+
+            </div>
+        `;
+
+
+    $("#novaResults")
+        .classList
+        .remove("hidden");
+
+
+    $("#retryNovaButton")
+        ?.addEventListener(
+            "click",
+            () => {
+
+                $("#novaForm")
+                    ?.requestSubmit();
+
+            }
+        );
+
+}
+
 
 // =====================================================
 // NOVA
@@ -1241,101 +1836,127 @@ $("#novaForm")
             event.preventDefault();
 
 
-            const mood =
-                $(
-                    'input[name="mood"]:checked'
-                )?.value;
+            if (
+                novaRequestController
+            ) {
+                return;
+            }
 
 
-            const pace =
-                $(
-                    'input[name="pace"]:checked'
-                )?.value;
+            selectedTrack =
+                null;
+
+            currentNovaSessionId =
+                null;
+
+            currentNovaProfile =
+                null;
 
 
-            const type =
-                $("#videoType").value;
+            const payload =
+                buildNovaRequestPayload();
 
 
-            const rankedSongs =
-                songs
-                    .map(
-                        song => {
-
-                            let score =
-                                70;
+            setNovaLoading(
+                true
+            );
 
 
-                            if (
-                                song.mood ===
-                                mood
-                            ) {
-                                score +=
-                                    12;
-                            }
+            renderNovaLoading();
 
 
-                            if (
-                                song.pace ===
-                                pace
-                            ) {
-                                score +=
-                                    10;
-                            }
+            try {
 
-
-                            if (
-                                song.type ===
-                                type
-                            ) {
-                                score +=
-                                    8;
-                            }
-
-
-                            return {
-                                ...song,
-
-                                score:
-                                    Math.min(
-                                        score,
-                                        99
-                                    )
-                            };
-
-                        }
-                    )
-
-                    .sort(
-                        (a, b) =>
-                            b.score -
-                            a.score
-                    )
-
-                    .slice(
-                        0,
-                        3
+                const data =
+                    await fetchNovaRecommendations(
+                        payload
                     );
 
-            await saveNovaSession(
-                rankedSongs
-            );
 
-            renderSongResults(
-                rankedSongs
-            );
+                currentNovaProfile =
+                    data.profile
+                    ||
+                    null;
 
 
-            $("#novaResults")
-                .classList
-                .remove("hidden");
+                const rankedSongs =
+                    normalizeNovaRecommendations(
+                        data
+                    );
 
 
-            $("#novaResults")
-                .scrollIntoView({
-                    behavior:
-                        "smooth"
-                });
+                await saveNovaSession(
+                    rankedSongs
+                );
+
+
+                renderSongResults(
+                    rankedSongs
+                );
+
+
+                if (
+                    Number(
+                        data.warning_count
+                    ) > 0
+                ) {
+
+                    console.warn(
+                        "Nova completed with warnings:",
+                        data.warnings
+                    );
+
+
+                    showToast(
+                        "Nova generated the shortlist with limited supporting data."
+                    );
+
+                }
+
+                else {
+
+                    showToast(
+                        "Nova shortlist ready."
+                    );
+
+                }
+
+
+                console.log(
+                    "Nova backend response:",
+                    data
+                );
+
+            }
+
+            catch (error) {
+
+                console.error(
+                    "Nova recommendation error:",
+                    error
+                );
+
+
+                renderNovaError(
+                    error?.message
+                    ||
+                    "An unexpected Nova error occurred."
+                );
+
+
+                showToast(
+                    "Nova could not generate the shortlist."
+                );
+
+            }
+
+            finally {
+
+                setNovaLoading(
+                    false
+                );
+
+            }
 
         }
     );
@@ -1345,6 +1966,24 @@ $("#novaForm")
     ?.addEventListener(
         "reset",
         () => {
+
+            novaRequestController
+                ?.abort();
+
+
+            novaRequestController =
+                null;
+
+
+            selectedTrack =
+                null;
+
+            currentNovaSessionId =
+                null;
+
+            currentNovaProfile =
+                null;
+
 
             $("#novaResults")
                 ?.classList
@@ -1382,6 +2021,42 @@ function renderSongResults(
                     index
                 ) => {
 
+                    const matchedTagsText =
+                        song.matchedTags.length
+
+                            ? song
+                                .matchedTags
+                                .join(", ")
+
+                            : "Semantic profile match";
+
+
+                    const profileTagsText =
+                        song.topTags
+                            .slice(
+                                0,
+                                3
+                            )
+                            .join(", ");
+
+
+                    const lastfmLink =
+                        song.lastfmUrl
+
+                            ? `
+                                <a
+                                    class="song-source-link"
+                                    href="${escapeHtml(song.lastfmUrl)}"
+                                    target="_blank"
+                                    rel="noopener noreferrer"
+                                >
+                                    View on Last.fm ↗
+                                </a>
+                            `
+
+                            : "";
+
+
                     return `
                         <article class="song-card">
 
@@ -1394,7 +2069,7 @@ function renderSongResults(
                             >
 
                                 <span class="match-badge">
-                                    ${song.score}% fit
+                                    Nova ${song.score}
                                 </span>
 
                             </div>
@@ -1407,11 +2082,11 @@ function renderSongResults(
                                     <div>
 
                                         <h3>
-                                            ${song.title}
+                                            ${escapeHtml(song.title)}
                                         </h3>
 
                                         <p>
-                                            ${song.artist}
+                                            ${escapeHtml(song.artist)}
                                         </p>
 
                                     </div>
@@ -1435,11 +2110,11 @@ function renderSongResults(
                                     <div class="song-detail">
 
                                         <span>
-                                            BPM
+                                            Nova score
                                         </span>
 
                                         <strong>
-                                            ${song.bpm}
+                                            ${song.score}
                                         </strong>
 
                                     </div>
@@ -1448,11 +2123,11 @@ function renderSongResults(
                                     <div class="song-detail">
 
                                         <span>
-                                            Editability
+                                            Semantic
                                         </span>
 
                                         <strong>
-                                            ${song.editability}
+                                            ${escapeHtml(song.semanticLabel)}
                                         </strong>
 
                                     </div>
@@ -1461,11 +2136,11 @@ function renderSongResults(
                                     <div class="song-detail">
 
                                         <span>
-                                            Energy
+                                            Tag signals
                                         </span>
 
                                         <strong>
-                                            ${song.energy}
+                                            ${song.matchedTags.length}
                                         </strong>
 
                                     </div>
@@ -1476,23 +2151,33 @@ function renderSongResults(
                                 <ul class="fit-reasons">
 
                                     <li>
-                                        Matches a ${song.mood} mood
+                                        ${escapeHtml(song.reason)}
                                     </li>
 
                                     <li>
-                                        ${song.pace} pacing provides useful editing rhythm
+                                        Matched: ${escapeHtml(matchedTagsText)}
                                     </li>
 
-                                    <li>
-                                        Strong prototype editability score
-                                    </li>
+                                    ${
+                                        profileTagsText
+                                            ? `
+                                                <li>
+                                                    Last.fm profile: ${escapeHtml(profileTagsText)}
+                                                </li>
+                                            `
+                                            : ""
+                                    }
 
                                 </ul>
 
 
+                                ${lastfmLink}
+
+
                                 <button
                                     class="button primary choose-song"
-                                    data-title="${song.title}"
+                                    data-index="${index}"
+                                    type="button"
                                 >
                                     Choose this song
                                 </button>
@@ -1517,14 +2202,27 @@ function renderSongResults(
                         "click",
                         async () => {
 
-                            selectedTrack =
-                                results.find(
-                                    song =>
-                                        song.title ===
-                                        button.dataset.title
+                            const index =
+                                Number(
+                                    button.dataset.index
                                 );
 
+
+                            selectedTrack =
+                                results[
+                                    index
+                                ]
+                                ||
+                                null;
+
+
+                            if (!selectedTrack) {
+                                return;
+                            }
+
+
                             await saveSelectedNovaTrack();
+
 
                             openHandoff();
 
@@ -1544,18 +2242,31 @@ function openHandoff() {
     }
 
 
+    const tags =
+        selectedTrack
+            .matchedTags
+            .slice(
+                0,
+                2
+            )
+            .join(", ");
+
+
     $("#handoffTrack").innerHTML =
         `
             <strong>
-                ${selectedTrack.title}
+                ${escapeHtml(selectedTrack.title)}
                 —
-                ${selectedTrack.artist}
+                ${escapeHtml(selectedTrack.artist)}
             </strong>
 
             <small>
-                ${selectedTrack.bpm} BPM ·
-                ${selectedTrack.energy} ·
-                ${selectedTrack.score}% fit
+                Nova score ${selectedTrack.score}
+                ${
+                    tags
+                        ? ` · ${escapeHtml(tags)}`
+                        : ""
+                }
             </small>
         `;
 
@@ -1576,6 +2287,11 @@ $("#continueToBlueprint")
         "click",
         () => {
 
+            if (!selectedTrack) {
+                return;
+            }
+
+
             closeModal(
                 "handoffModal"
             );
@@ -1591,7 +2307,8 @@ $("#continueToBlueprint")
 
 
             $("#songDuration").value =
-                $("#targetDuration").value ||
+                $("#targetDuration").value
+                ||
                 60;
 
 
@@ -1600,9 +2317,27 @@ $("#continueToBlueprint")
                 `${selectedTrack.title} — ${selectedTrack.artist}`;
 
 
+            const handoffTags =
+                selectedTrack
+                    .matchedTags
+                    .slice(
+                        0,
+                        2
+                    )
+                    .join(", ");
+
+
             $("#selectedTrackMeta")
                 .textContent =
-                `${selectedTrack.bpm} BPM · ${selectedTrack.energy}`;
+                (
+                    `Nova score ${selectedTrack.score}`
+                    +
+                    (
+                        handoffTags
+                            ? ` · ${handoffTags}`
+                            : ""
+                    )
+                );
 
 
             $("#selectedTrackBanner")
@@ -1620,7 +2355,12 @@ $("#changeTrackButton")
 
             selectedTrack =
                 null;
-            currentNovaSessionId = null;
+
+            currentNovaSessionId =
+                null;
+
+            currentNovaProfile =
+                null;
 
 
             $("#selectedTrackBanner")
@@ -1681,7 +2421,10 @@ $("#blueprintForm")
                         .value
                 );
 
-            const musicProfile = $("#musicProfile").value;
+
+            const musicProfile =
+                $("#musicProfile").value;
+
 
             const density =
                 $(
@@ -1711,31 +2454,49 @@ $("#blueprintForm")
                 return;
             }
 
+
             const cameFromNova =
-            selectedTrack &&
-            selectedTrack.title === song &&
-            currentNovaSessionId;
+                selectedTrack &&
+                selectedTrack.title === song &&
+                currentNovaSessionId;
+
 
             currentBlueprint = {
-                id: Date.now(),
+
+                id:
+                    Date.now(),
+
                 song,
+
                 artist:
                     cameFromNova
                         ? selectedTrack.artist
                         : null,
 
                 duration,
-                musicProfile,
-                density,
-                selectedTypes,
-                novaSessionId: cameFromNova ? currentNovaSessionId : null,
-                created: new Date().toLocaleDateString(),
 
-                cues: createCues(
-                    duration,
-                    density,
-                    selectedTypes
-                )
+                musicProfile,
+
+                density,
+
+                selectedTypes,
+
+                novaSessionId:
+                    cameFromNova
+                        ? currentNovaSessionId
+                        : null,
+
+                created:
+                    new Date()
+                        .toLocaleDateString(),
+
+                cues:
+                    createCues(
+                        duration,
+                        density,
+                        selectedTypes
+                    )
+
             };
 
 
@@ -1936,7 +2697,6 @@ function renderBlueprint(
     };
 
 
-    // Timeline markers
     $("#visualTimeline")
         .innerHTML =
         blueprint.cues
@@ -1973,7 +2733,6 @@ function renderBlueprint(
             .join("");
 
 
-    // Signal table
     $("#cueTableBody")
         .innerHTML =
         blueprint.cues
@@ -2038,7 +2797,6 @@ function renderBlueprint(
             .join("");
 
 
-    // Allow suggestion text to be edited
     $$(".edit-cue")
         .forEach(
             button => {
@@ -2100,6 +2858,7 @@ function renderBlueprint(
 
 }
 
+
 // =====================================================
 // PULSAR DATABASE
 // =====================================================
@@ -2110,10 +2869,6 @@ async function savePulsarSignal() {
         return null;
     }
 
-
-    // ---------------------------------------------
-    // Get logged-in user
-    // ---------------------------------------------
 
     const {
         data: { user },
@@ -2143,10 +2898,6 @@ async function savePulsarSignal() {
         return null;
     }
 
-
-    // ---------------------------------------------
-    // Create parent Pulsar Signal
-    // ---------------------------------------------
 
     const {
         data: signal,
@@ -2199,10 +2950,6 @@ async function savePulsarSignal() {
     }
 
 
-    // ---------------------------------------------
-    // Create cue rows
-    // ---------------------------------------------
-
     const cueRows =
         currentBlueprint.cues.map(
             (cue, index) => ({
@@ -2247,8 +2994,6 @@ async function savePulsarSignal() {
         );
 
 
-        // Remove the parent Signal so we don't
-        // leave behind a half-saved record.
         await db
             .from("pulsar_signals")
             .delete()
@@ -2275,6 +3020,7 @@ async function savePulsarSignal() {
     return signal.id;
 }
 
+
 // =====================================================
 // SAVE / COPY / ECHOES
 // =====================================================
@@ -2290,8 +3036,10 @@ $("#saveBlueprint")
                 return;
             }
 
+
             const signalId =
                 await savePulsarSignal();
+
 
             if (
                 !signalId
@@ -2299,7 +3047,9 @@ $("#saveBlueprint")
                 return;
             }
 
+
             await updateHistory();
+
 
             showToast(
                 "Signal captured."
@@ -2366,10 +3116,6 @@ $("#copyBlueprint")
 
 async function getHistory() {
 
-    // ---------------------------------------------
-    // Check which user is signed in
-    // ---------------------------------------------
-
     const {
         data: { user },
         error: userError
@@ -2387,15 +3133,10 @@ async function getHistory() {
     }
 
 
-    // Guests have no account-backed Echoes
     if (!user) {
         return [];
     }
 
-
-    // ---------------------------------------------
-    // Load Signals + their related cues
-    // ---------------------------------------------
 
     const {
         data,
@@ -2447,11 +3188,6 @@ async function getHistory() {
         return [];
     }
 
-
-    // ---------------------------------------------
-    // Convert database rows into the same shape
-    // the existing UI already understands
-    // ---------------------------------------------
 
     return (data || []).map(
         signal => {
@@ -2537,17 +3273,12 @@ async function getHistory() {
     );
 }
 
+
 function openSavedSignal(signal) {
 
-    // Make a copy so editing the reopened Signal
-    // doesn't accidentally mutate the Echoes list
     currentBlueprint =
         structuredClone(signal);
 
-
-    // ---------------------------------------------
-    // Restore the Pulsar form fields
-    // ---------------------------------------------
 
     $("#blueprintSong").value =
         signal.song || "";
@@ -2561,7 +3292,6 @@ function openSavedSignal(signal) {
         signal.musicProfile || "dynamic";
 
 
-    // Restore suggestion density
     $$('input[name="density"]')
         .forEach(input => {
 
@@ -2572,7 +3302,6 @@ function openSavedSignal(signal) {
         });
 
 
-    // Restore selected cue types
     $$('input[name="cueType"]')
         .forEach(input => {
 
@@ -2584,10 +3313,6 @@ function openSavedSignal(signal) {
 
         });
 
-
-    // ---------------------------------------------
-    // Restore Nova relationship if one existed
-    // ---------------------------------------------
 
     currentNovaSessionId =
         signal.novaSessionId || null;
@@ -2603,25 +3328,33 @@ function openSavedSignal(signal) {
                 signal.song,
 
             artist:
-                signal.artist
+                signal.artist,
+
+            score:
+                null,
+
+            matchedTags:
+                []
         };
 
 
         $("#selectedTrackName")
             .textContent =
-            signal.song;
+            `${signal.song} — ${signal.artist}`;
 
 
         $("#selectedTrackMeta")
             .textContent =
-            signal.artist;
+            "Restored from Echoes";
 
 
         $("#selectedTrackBanner")
             .classList
             .remove("hidden");
 
-    } else {
+    }
+
+    else {
 
         selectedTrack = null;
 
@@ -2633,24 +3366,17 @@ function openSavedSignal(signal) {
     }
 
 
-    // ---------------------------------------------
-    // Go to Pulsar
-    // ---------------------------------------------
-
     showView(
         "pulsar"
     );
 
-
-    // ---------------------------------------------
-    // Re-render the ORIGINAL saved Signal
-    // ---------------------------------------------
 
     renderBlueprint(
         currentBlueprint
     );
 
 }
+
 
 function renderHistoryInto(
     container,
@@ -2705,7 +3431,7 @@ function renderHistoryInto(
 
 
                             <h3>
-                                ${item.song}
+                                ${escapeHtml(item.song)}
                             </h3>
 
 
@@ -2717,7 +3443,7 @@ function renderHistoryInto(
                             <div class="history-meta">
 
                                 <span>
-                                    ${item.created}
+                                    ${escapeHtml(item.created)}
                                 </span>
 
 
@@ -2733,7 +3459,7 @@ function renderHistoryInto(
 
                                 <button
                                     class="button ghost small open-echo"
-                                    data-signal-id="${item.id}"
+                                    data-signal-id="${escapeHtml(item.id)}"
                                 >
                                     Open Signal →
                                 </button>
@@ -2748,54 +3474,54 @@ function renderHistoryInto(
 
             .join("");
 
-            container
-                .querySelectorAll(
-                    ".open-echo"
-                )
-                .forEach(button => {
 
-                    button.addEventListener(
-                        "click",
-                        () => {
+    container
+        .querySelectorAll(
+            ".open-echo"
+        )
+        .forEach(button => {
 
-                            const signal =
-                                items.find(
-                                    item =>
-                                        item.id ===
-                                        button.dataset.signalId
-                                );
+            button.addEventListener(
+                "click",
+                () => {
 
-
-                            if (!signal) {
-
-                                console.error(
-                                    "Could not find saved Signal:",
+                    const signal =
+                        items.find(
+                            item =>
+                                String(item.id) ===
+                                String(
                                     button.dataset.signalId
-                                );
-
-                                return;
-                            }
+                                )
+                        );
 
 
-                            openSavedSignal(
-                                signal
-                            );
+                    if (!signal) {
 
-                        }
+                        console.error(
+                            "Could not find saved Signal:",
+                            button.dataset.signalId
+                        );
+
+                        return;
+                    }
+
+
+                    openSavedSignal(
+                        signal
                     );
 
-                });
+                }
+            );
+
+        });
 
 }
+
 
 $("#clearHistory")
     ?.addEventListener(
         "click",
         async () => {
-
-            // -------------------------------------
-            // Make sure someone is logged in
-            // -------------------------------------
 
             const {
                 data: { user },
@@ -2816,10 +3542,6 @@ $("#clearHistory")
             }
 
 
-            // -------------------------------------
-            // Prevent accidental deletion
-            // -------------------------------------
-
             const confirmed =
                 window.confirm(
                     "Delete all of your captured Signals? This cannot be undone."
@@ -2830,10 +3552,6 @@ $("#clearHistory")
                 return;
             }
 
-
-            // -------------------------------------
-            // Delete this user's Pulsar Signals
-            // -------------------------------------
 
             const {
                 error
@@ -2871,6 +3589,7 @@ $("#clearHistory")
         }
     );
 
+
 async function updateHistory() {
 
     const history =
@@ -2881,33 +3600,30 @@ async function updateHistory() {
         history.length;
 
 
-    // ---------------------------------------------
-    // Update Signal counts
-    // ---------------------------------------------
+    const blueprintCount =
+        $("#blueprintCount");
 
-    $("#blueprintCount")
-        .textContent =
-        count;
+    const accountBlueprintCount =
+        $("#accountBlueprintCount");
 
 
-    $("#accountBlueprintCount")
-        .textContent =
-        count;
+    if (blueprintCount) {
+        blueprintCount.textContent =
+            count;
+    }
 
 
-    // ---------------------------------------------
-    // Full Echoes page
-    // ---------------------------------------------
+    if (accountBlueprintCount) {
+        accountBlueprintCount.textContent =
+            count;
+    }
+
 
     renderHistoryInto(
         $("#historyList"),
         history
     );
 
-
-    // ---------------------------------------------
-    // Launchpad — only the newest three
-    // ---------------------------------------------
 
     renderHistoryInto(
         $("#recentBlueprints"),
@@ -2918,6 +3634,7 @@ async function updateHistory() {
     );
 
 }
+
 
 // =====================================================
 // ACCOUNT MODAL
@@ -3019,15 +3736,19 @@ function showToast(message) {
 
 function formatTime(seconds) {
 
+    const safeSeconds =
+        Number(seconds) || 0;
+
+
     const minutes =
         Math.floor(
-            seconds / 60
+            safeSeconds / 60
         );
 
 
     const remaining =
         Math.round(
-            seconds % 60
+            safeSeconds % 60
         );
 
 
@@ -3043,13 +3764,19 @@ function formatTime(seconds) {
 
 function capitalize(text) {
 
+    const value =
+        String(
+            text || ""
+        );
+
+
     return (
 
-        text
+        value
             .charAt(0)
             .toUpperCase() +
 
-        text
+        value
             .slice(1)
 
     );
@@ -3061,8 +3788,6 @@ function capitalize(text) {
 // INTERACTION POLISH
 // =====================================================
 
-// Add material separation to the floating
-// top bar once scrolling begins.
 window.addEventListener(
     "scroll",
     () => {
@@ -3078,7 +3803,6 @@ window.addEventListener(
 );
 
 
-// Clicking the dimmed area dismisses a modal.
 $$(".modal-backdrop")
     .forEach(
         backdrop => {
@@ -3108,7 +3832,6 @@ $$(".modal-backdrop")
     );
 
 
-// Escape also dismisses open modals.
 document.addEventListener(
     "keydown",
     event => {

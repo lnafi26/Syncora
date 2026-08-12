@@ -1606,3 +1606,159 @@ tbody tr:hover {
         grid-template-columns: 1fr;
     }
 }
+
+/* ----------------------------------------------------------
+   NOVA LIVE BACKEND STATES
+   ---------------------------------------------------------- */
+
+.button:disabled {
+    cursor: wait;
+    opacity: .58;
+    transform: none !important;
+}
+
+.nova-loading-card {
+    pointer-events: none;
+}
+
+.nova-loading-art,
+.nova-loading-line,
+.nova-loading-block {
+    position: relative;
+    overflow: hidden;
+    background:
+        rgba(255, 255, 255, .055);
+}
+
+.nova-loading-art::after,
+.nova-loading-line::after,
+.nova-loading-block::after {
+    content: "";
+
+    position: absolute;
+    inset: 0;
+
+    transform:
+        translateX(-100%);
+
+    background:
+        linear-gradient(
+            90deg,
+            transparent,
+            rgba(255, 255, 255, .08),
+            transparent
+        );
+
+    animation:
+        novaShimmer
+        1.35s
+        infinite;
+}
+
+.nova-loading-line {
+    height: 13px;
+    margin-bottom: 10px;
+    border-radius: 999px;
+}
+
+.nova-loading-line.wide {
+    width: 72%;
+}
+
+.nova-loading-line.medium {
+    width: 48%;
+}
+
+.nova-loading-block {
+    height: 52px;
+    border-radius: 9px;
+}
+
+@keyframes novaShimmer {
+    100% {
+        transform:
+            translateX(100%);
+    }
+}
+
+.nova-error-card {
+    grid-column: 1 / -1;
+
+    min-height: 220px;
+
+    display: grid;
+    place-items: center;
+
+    gap: 10px;
+
+    padding: 34px;
+
+    border:
+        1px solid
+        rgba(255, 115, 115, .18);
+
+    border-radius:
+        var(--radius-lg);
+
+    background:
+        rgba(255, 115, 115, .045);
+
+    text-align: center;
+}
+
+.nova-error-card strong {
+    font-size: 1rem;
+}
+
+.nova-error-card p {
+    max-width: 560px;
+
+    margin: 0;
+
+    color: var(--muted);
+
+    font-size: .78rem;
+}
+
+.nova-error-card .button {
+    margin-top: 8px;
+}
+
+.song-source-link {
+    display: inline-flex;
+
+    margin:
+        -4px
+        0
+        16px;
+
+    color: var(--muted);
+
+    font-size: .68rem;
+    font-weight: 620;
+
+    text-decoration: none;
+
+    transition:
+        color 140ms ease;
+}
+
+.song-source-link:hover {
+    color: var(--accent);
+}
+
+/* The artwork block is decorative for now;
+   Nova does not stream audio previews. */
+.song-art::before {
+    content: "♪";
+    margin-left: 0;
+    font-size: 1.2rem;
+}
+
+@media (prefers-reduced-motion: reduce) {
+    .nova-loading-art::after,
+    .nova-loading-line::after,
+    .nova-loading-block::after {
+        animation: none;
+    }
+}

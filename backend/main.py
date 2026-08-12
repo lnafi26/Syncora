@@ -9,17 +9,19 @@ import time
 import httpx
 
 from dotenv import dotenv_values
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI, HTTPException, Request
+from fastapi.exceptions import RequestValidationError
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import JSONResponse
 from openai import OpenAI
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 
 # =====================================================
 # BUILD / MODELS
 # =====================================================
 
-BUILD_ID = "nova-hybrid-0.7.2"
+BUILD_ID = "nova-hybrid-0.7.3"
 
 QWEN_MODEL_ID = "nova-qwen"
 EMBEDDING_MODEL_ID = "nova-embed"
@@ -60,8 +62,9 @@ if not LASTFM_API_KEY:
 
 app = FastAPI(
     title="Syncora Backend",
-    version="0.7.2"
+    version="0.7.3"
 )
+
 
 app.add_middleware(
     CORSMiddleware,
@@ -76,7 +79,76 @@ app.add_middleware(
 
 
 # =====================================================
-# LM STUDIO
+# GLOBAL ERROR HANDLING
+# =====================================================
+
+@app.exception_handler(RequestValidationError)
+async def validation_exception_handler(
+    request: Request,
+    exc: RequestValidationError
+):
+
+    return JSONResponse(
+        status_code=422,
+        content={
+            "detail": {
+                "error":
+                    "Invalid Nova request body.",
+
+                "message":
+                    (
+                        "One or more required fields "
+                        "were missing or invalid."
+                    ),
+
+                "issues":
+                    exc.errors(),
+
+                "build":
+                    BUILD_ID
+            }
+        }
+    )
+
+
+@app.exception_handler(Exception)
+async def unhandled_exception_handler(
+    request: Request,
+    exc: Exception
+):
+
+    # Full error still appears in the backend
+    # terminal for development.
+    print(
+        f"[UNHANDLED ERROR] "
+        f"{request.method} {request.url.path}: "
+        f"{type(exc).__name__}: {exc}"
+    )
+
+    # Do not expose a Python traceback to the
+    # browser/frontend.
+    return JSONResponse(
+        status_code=500,
+        content={
+            "detail": {
+                "error":
+                    "Internal Syncora backend error.",
+
+                "message":
+                    (
+                        "An unexpected backend error "
+                        "occurred."
+                    ),
+
+                "build":
+                    BUILD_ID
+            }
+        }
+    )
+
+
+# =====================================================
+# LM STUDIO CLIENT
 # =====================================================
 
 client = OpenAI(
@@ -92,14 +164,46 @@ client = OpenAI(
 # =====================================================
 
 class NovaRequest(BaseModel):
-    project_name: str
-    video_type: str
-    target_duration_seconds: int
-    mood: str
-    pace: str
-    vocal_style: str
-    structure_preference: str
-    creative_intent: str = ""
+
+    project_name: str = Field(
+        min_length=1,
+        max_length=200
+    )
+
+    video_type: str = Field(
+        min_length=1,
+        max_length=200
+    )
+
+    target_duration_seconds: int = Field(
+        gt=0,
+        le=86400
+    )
+
+    mood: str = Field(
+        min_length=1,
+        max_length=200
+    )
+
+    pace: str = Field(
+        min_length=1,
+        max_length=200
+    )
+
+    vocal_style: str = Field(
+        min_length=1,
+        max_length=200
+    )
+
+    structure_preference: str = Field(
+        min_length=1,
+        max_length=300
+    )
+
+    creative_intent: str = Field(
+        default="",
+        max_length=2000
+    )
 
 
 # =====================================================
@@ -177,9 +281,105 @@ def get_cached_nova_profile(
         return None
 
 
-    return cached[
+    profile = cached.get(
         "profile"
-    ]
+    )
+
+
+    # Protect against an old cached profile if the
+    # backend schema changes during development.
+
+    if not isinstance(
+        profile,
+        dict
+    ):
+
+        nova_profile_cache.pop(
+            key,
+            None
+        )
+
+        return None
+
+
+    if (
+        "retrieval_tags"
+        not in profile
+        or
+        "semantic_traits"
+        not in profile
+    ):
+
+        nova_profile_cache.pop(
+            key,
+            None
+        )
+
+        return None
+
+
+    return profile
+
+
+# =====================================================
+# UTILITY: CLEAN STRING LIST
+# =====================================================
+
+def clean_string_list(
+    values,
+    limit
+):
+
+    if not isinstance(
+        values,
+        list
+    ):
+
+        return []
+
+
+    cleaned = []
+
+
+    for value in values:
+
+        if not isinstance(
+            value,
+            str
+        ):
+
+            continue
+
+
+        value = value.strip()
+
+
+        if not value:
+            continue
+
+
+        if value.casefold() in [
+            existing.casefold()
+            for existing
+            in cleaned
+        ]:
+
+            continue
+
+
+        cleaned.append(
+            value
+        )
+
+
+        if len(
+            cleaned
+        ) >= limit:
+
+            break
+
+
+    return cleaned
 
 
 # =====================================================
@@ -193,11 +393,17 @@ def parse_nova_json(
     if raw is None or not raw.strip():
 
         raise HTTPException(
-            status_code=500,
-            detail=(
-                f"{BUILD_ID}: Nova received "
-                "an empty response from Qwen."
-            )
+            status_code=502,
+            detail={
+                "error":
+                    "Nova received an empty Qwen response.",
+
+                "stage":
+                    "qwen_profile",
+
+                "build":
+                    BUILD_ID
+            }
         )
 
 
@@ -251,7 +457,7 @@ def parse_nova_json(
 
     try:
 
-        return json.loads(
+        parsed = json.loads(
             cleaned
         )
 
@@ -259,21 +465,50 @@ def parse_nova_json(
     except json.JSONDecodeError as error:
 
         raise HTTPException(
-            status_code=500,
+            status_code=502,
             detail={
                 "error":
-                    (
-                        f"{BUILD_ID}: "
-                        "Nova returned invalid JSON."
-                    ),
+                    "Qwen returned invalid JSON.",
+
+                "stage":
+                    "qwen_profile",
 
                 "json_error":
                     str(error),
 
                 "raw_response":
-                    raw
+                    raw[:1000],
+
+                "build":
+                    BUILD_ID
             }
         )
+
+
+    if not isinstance(
+        parsed,
+        dict
+    ):
+
+        raise HTTPException(
+            status_code=502,
+            detail={
+                "error":
+                    (
+                        "Qwen returned JSON, but the "
+                        "top-level value was not an object."
+                    ),
+
+                "stage":
+                    "qwen_profile",
+
+                "build":
+                    BUILD_ID
+            }
+        )
+
+
+    return parsed
 
 
 # =====================================================
@@ -459,17 +694,61 @@ Creative intent:
 
     except Exception as error:
 
+        error_name = (
+            type(error).__name__
+        )
+
+
+        if (
+            "Timeout"
+            in error_name
+            or
+            "timeout"
+            in str(error).lower()
+        ):
+
+            raise HTTPException(
+                status_code=504,
+                detail={
+                    "error":
+                        "Nova's Qwen request timed out.",
+
+                    "stage":
+                        "qwen_profile",
+
+                    "message":
+                        (
+                            "LM Studio did not complete "
+                            "the profile generation within "
+                            "the configured timeout."
+                        ),
+
+                    "model":
+                        QWEN_MODEL_ID,
+
+                    "build":
+                        BUILD_ID
+                }
+            )
+
+
         raise HTTPException(
             status_code=502,
             detail={
                 "error":
-                    (
-                        f"{BUILD_ID}: "
-                        "LM Studio Qwen request failed."
-                    ),
+                    "Nova could not reach Qwen.",
+
+                "stage":
+                    "qwen_profile",
 
                 "message":
-                    str(error)
+                    str(error),
+
+                "model":
+                    QWEN_MODEL_ID,
+
+                "build":
+                    BUILD_ID
             }
         )
 
@@ -477,12 +756,20 @@ Creative intent:
     if not completion.choices:
 
         raise HTTPException(
-            status_code=500,
-            detail=(
-                f"{BUILD_ID}: "
-                "LM Studio returned zero "
-                "Qwen choices."
-            )
+            status_code=502,
+            detail={
+                "error":
+                    "LM Studio returned zero Qwen choices.",
+
+                "stage":
+                    "qwen_profile",
+
+                "model":
+                    QWEN_MODEL_ID,
+
+                "build":
+                    BUILD_ID
+            }
         )
 
 
@@ -499,151 +786,130 @@ Creative intent:
     )
 
 
-    retrieval_tags = profile.get(
-        "retrieval_tags",
-        []
+    retrieval_tags = clean_string_list(
+        profile.get(
+            "retrieval_tags",
+            []
+        ),
+        limit=6
     )
 
-    semantic_traits = profile.get(
-        "semantic_traits",
-        []
-    )
 
-
-    if not isinstance(
-        retrieval_tags,
-        list
-    ):
-
-        raise HTTPException(
-            status_code=500,
-            detail=(
-                f"{BUILD_ID}: "
-                "retrieval_tags was not a list."
-            )
-        )
-
-
-    if not isinstance(
-        semantic_traits,
-        list
-    ):
-
-        raise HTTPException(
-            status_code=500,
-            detail=(
-                f"{BUILD_ID}: "
-                "semantic_traits was not a list."
-            )
-        )
-
-
-    clean_retrieval_tags = []
-
-
-    for tag in retrieval_tags:
-
-        if not isinstance(
-            tag,
-            str
-        ):
-
-            continue
-
-
-        tag = tag.strip()
-
-
-        if not tag:
-            continue
-
-
-        if tag.casefold() in [
-            existing.casefold()
-            for existing
-            in clean_retrieval_tags
-        ]:
-
-            continue
-
-
-        clean_retrieval_tags.append(
-            tag
-        )
-
-
-    clean_retrieval_tags = (
-        clean_retrieval_tags[:6]
+    semantic_traits = clean_string_list(
+        profile.get(
+            "semantic_traits",
+            []
+        ),
+        limit=4
     )
 
 
     if len(
-        clean_retrieval_tags
+        retrieval_tags
     ) < 4:
 
         raise HTTPException(
-            status_code=500,
+            status_code=502,
             detail={
                 "error":
                     (
-                        f"{BUILD_ID}: Nova generated "
-                        "fewer than four usable "
-                        "retrieval tags."
+                        "Qwen generated fewer than four "
+                        "usable retrieval tags."
                     ),
 
+                "stage":
+                    "qwen_profile",
+
                 "profile":
-                    profile
+                    profile,
+
+                "build":
+                    BUILD_ID
             }
         )
 
 
-    clean_semantic_traits = []
+    if len(
+        semantic_traits
+    ) < 2:
 
+        raise HTTPException(
+            status_code=502,
+            detail={
+                "error":
+                    (
+                        "Qwen generated fewer than two "
+                        "usable semantic traits."
+                    ),
 
-    for trait in semantic_traits:
+                "stage":
+                    "qwen_profile",
 
-        if not isinstance(
-            trait,
-            str
-        ):
+                "profile":
+                    profile,
 
-            continue
-
-
-        trait = trait.strip()
-
-
-        if not trait:
-            continue
-
-
-        if trait.casefold() in [
-            existing.casefold()
-            for existing
-            in clean_semantic_traits
-        ]:
-
-            continue
-
-
-        clean_semantic_traits.append(
-            trait
+                "build":
+                    BUILD_ID
+            }
         )
-
-
-    clean_semantic_traits = (
-        clean_semantic_traits[:4]
-    )
 
 
     profile[
         "retrieval_tags"
-    ] = clean_retrieval_tags
+    ] = retrieval_tags
 
 
     profile[
         "semantic_traits"
-    ] = clean_semantic_traits
+    ] = semantic_traits
+
+
+    summary = profile.get(
+        "summary"
+    )
+
+
+    energy = profile.get(
+        "energy"
+    )
+
+
+    vocal_preference = profile.get(
+        "vocal_preference"
+    )
+
+
+    if not isinstance(
+        summary,
+        str
+    ) or not summary.strip():
+
+        profile[
+            "summary"
+        ] = (
+            f"{payload.mood} music for "
+            f"{payload.video_type}."
+        )
+
+
+    if not isinstance(
+        energy,
+        str
+    ) or not energy.strip():
+
+        profile[
+            "energy"
+        ] = payload.pace
+
+
+    if not isinstance(
+        vocal_preference,
+        str
+    ) or not vocal_preference.strip():
+
+        profile[
+            "vocal_preference"
+        ] = payload.vocal_style
 
 
     return profile
@@ -703,8 +969,6 @@ def tag_similarity(
         return 0.0
 
 
-    # Exact match.
-
     if desired == actual:
         return 1.0
 
@@ -724,8 +988,6 @@ def tag_similarity(
     )
 
 
-    # Formatting variants:
-    #
     # synth pop -> synthpop
 
     if (
@@ -755,11 +1017,10 @@ def tag_similarity(
     )
 
 
-    # =================================================
-    # SPECIFIC MULTI-WORD DESIRED TAG
+    # Specific requested genre cannot be
+    # satisfied by its generic parent.
     #
-    # dream pop -> pop = NO
-    # =================================================
+    # dream pop -> pop = 0
 
     if len(
         desired_words
@@ -803,11 +1064,10 @@ def tag_similarity(
         return 0.0
 
 
-    # =================================================
-    # BROAD SINGLE-WORD DESIRED TAG
+    # Broad term can partially match a
+    # more specific tag.
     #
     # electronic -> electronic rock
-    # =================================================
 
     desired_word = (
         desired_words[0]
@@ -834,7 +1094,7 @@ def tag_similarity(
 
 
 # =====================================================
-# LAST.FM SEARCH
+# LAST.FM INITIAL SEARCH
 # =====================================================
 
 async def get_lastfm_tracks_for_tag(
@@ -875,25 +1135,80 @@ async def get_lastfm_tracks_for_tag(
         data = response.json()
 
 
-    except Exception as error:
+    except httpx.TimeoutException:
 
-        print(
-            f"Last.fm search failed for "
-            f"'{tag}': {error}"
-        )
+        return {
+            "tag":
+                tag,
 
-        return []
+            "tracks":
+                [],
+
+            "error":
+                "Last.fm request timed out."
+        }
+
+
+    except httpx.HTTPStatusError as error:
+
+        return {
+            "tag":
+                tag,
+
+            "tracks":
+                [],
+
+            "error":
+                (
+                    "Last.fm returned HTTP "
+                    f"{error.response.status_code}."
+                )
+        }
+
+
+    except httpx.RequestError as error:
+
+        return {
+            "tag":
+                tag,
+
+            "tracks":
+                [],
+
+            "error":
+                f"Last.fm network error: {error}"
+        }
+
+
+    except ValueError:
+
+        return {
+            "tag":
+                tag,
+
+            "tracks":
+                [],
+
+            "error":
+                "Last.fm returned invalid JSON."
+        }
 
 
     if "error" in data:
 
-        print(
-            f"Last.fm API error for "
-            f"'{tag}': "
-            f"{data.get('message')}"
-        )
+        return {
+            "tag":
+                tag,
 
-        return []
+            "tracks":
+                [],
+
+            "error":
+                (
+                    "Last.fm API error: "
+                    f"{data.get('message', 'Unknown error')}"
+                )
+        }
 
 
     tracks = (
@@ -909,6 +1224,14 @@ async def get_lastfm_tracks_for_tag(
     )
 
 
+    if not isinstance(
+        tracks,
+        list
+    ):
+
+        tracks = []
+
+
     results = []
 
 
@@ -916,6 +1239,14 @@ async def get_lastfm_tracks_for_tag(
         tracks,
         start=1
     ):
+
+        if not isinstance(
+            track,
+            dict
+        ):
+
+            continue
+
 
         title = track.get(
             "name"
@@ -958,10 +1289,10 @@ async def get_lastfm_tracks_for_tag(
         results.append(
             {
                 "title":
-                    title,
+                    str(title).strip(),
 
                 "artist":
-                    artist_name,
+                    str(artist_name).strip(),
 
                 "lastfm_url":
                     track.get(
@@ -983,25 +1314,25 @@ async def get_lastfm_tracks_for_tag(
         )
 
 
-    return results
+    return {
+        "tag":
+            tag,
+
+        "tracks":
+            results,
+
+        "error":
+            None
+    }
 
 
 # =====================================================
-# ALL SIX LAST.FM SEARCHES
+# ALL USABLE LAST.FM SEARCHES
 # =====================================================
 
 async def search_lastfm_all_usable(
     retrieval_tags
 ):
-
-    # All six Qwen retrieval tags are queried
-    # concurrently.
-    #
-    # Unlike 0.7.1, we no longer discard valid
-    # tags #5 and #6.
-    #
-    # Every tag that successfully returns tracks
-    # is allowed to contribute candidates.
 
     async with httpx.AsyncClient(
         timeout=10.0
@@ -1016,7 +1347,8 @@ async def search_lastfm_all_usable(
                 limit=10
             )
 
-            for tag in retrieval_tags
+            for tag
+            in retrieval_tags
 
         ]
 
@@ -1026,50 +1358,55 @@ async def search_lastfm_all_usable(
         )
 
 
-    search_results = [
+    usable_results = [
 
-        {
-            "tag":
-                tag,
+        result
 
-            "tracks":
-                tracks
-        }
+        for result
+        in results
 
-        for tag, tracks
-        in zip(
-            retrieval_tags,
-            results
-        )
+        if result[
+            "tracks"
+        ]
 
     ]
 
 
     dead_tags = [
 
-        item[
+        result[
             "tag"
         ]
 
-        for item
-        in search_results
+        for result
+        in results
 
-        if not item[
+        if not result[
             "tracks"
         ]
 
     ]
 
 
-    usable_results = [
+    failed_queries = [
 
-        item
+        {
+            "tag":
+                result[
+                    "tag"
+                ],
 
-        for item
-        in search_results
+            "error":
+                result[
+                    "error"
+                ]
+        }
 
-        if item[
-            "tracks"
+        for result
+        in results
+
+        if result[
+            "error"
         ]
 
     ]
@@ -1084,54 +1421,52 @@ async def search_lastfm_all_usable(
             detail={
                 "error":
                     (
-                        f"{BUILD_ID}: Last.fm "
-                        "returned usable results "
-                        "for fewer than two "
-                        "retrieval tags."
+                        "Last.fm returned usable results "
+                        "for fewer than two retrieval tags."
                     ),
+
+                "stage":
+                    "lastfm_search",
 
                 "retrieval_tags":
                     retrieval_tags,
 
                 "dead_tags":
-                    dead_tags
+                    dead_tags,
+
+                "failed_queries":
+                    failed_queries,
+
+                "build":
+                    BUILD_ID
             }
         )
 
 
-    active_tags = [
-
-        item[
-            "tag"
-        ]
-
-        for item
-        in usable_results
-
-    ]
-
-
-    tag_results = [
-
-        item[
-            "tracks"
-        ]
-
-        for item
-        in usable_results
-
-    ]
-
-
     return {
-        "tag_results":
-            tag_results,
+        "tag_results": [
+            result[
+                "tracks"
+            ]
 
-        "active_tags":
-            active_tags,
+            for result
+            in usable_results
+        ],
+
+        "active_tags": [
+            result[
+                "tag"
+            ]
+
+            for result
+            in usable_results
+        ],
 
         "dead_tags":
-            dead_tags
+            dead_tags,
+
+        "failed_queries":
+            failed_queries
     }
 
 
@@ -1173,7 +1508,7 @@ def count_unique_initial_candidates(
 
 
 # =====================================================
-# BALANCED SHORTLIST
+# BALANCED SHORTLIST + DEDUP DEBUGGING
 # =====================================================
 
 def build_balanced_shortlist(
@@ -1181,24 +1516,26 @@ def build_balanced_shortlist(
     per_tag: int = 2
 ):
 
-    # 0.7.2:
-    #
-    # Up to 6 usable retrieval tags
-    # ×
-    # top 2 songs from each
-    #
-    # = maximum ~12 candidates
-    #
-    # Duplicate songs across tags are merged.
-
     candidates = {}
+
+    raw_slots = 0
 
 
     for tag_tracks in tag_results:
 
-        for track in tag_tracks[
-            :per_tag
-        ]:
+        selected_tracks = (
+            tag_tracks[
+                :per_tag
+            ]
+        )
+
+
+        raw_slots += len(
+            selected_tracks
+        )
+
+
+        for track in selected_tracks:
 
             key = (
                 track[
@@ -1264,8 +1601,77 @@ def build_balanced_shortlist(
             )
 
 
-    return list(
+    candidate_list = list(
         candidates.values()
+    )
+
+
+    merged_candidates = []
+
+
+    for candidate in candidate_list:
+
+        retrieval_matches = (
+            candidate[
+                "retrieval_matches"
+            ]
+        )
+
+
+        if len(
+            retrieval_matches
+        ) > 1:
+
+            merged_candidates.append(
+                {
+                    "title":
+                        candidate[
+                            "title"
+                        ],
+
+                    "artist":
+                        candidate[
+                            "artist"
+                        ],
+
+                    "retrieved_by": [
+                        match[
+                            "tag"
+                        ]
+
+                        for match
+                        in retrieval_matches
+                    ]
+                }
+            )
+
+
+    debug = {
+        "raw_slots":
+            raw_slots,
+
+        "unique_candidates":
+            len(
+                candidate_list
+            ),
+
+        "duplicates_removed":
+            (
+                raw_slots
+                -
+                len(
+                    candidate_list
+                )
+            ),
+
+        "merged_candidates":
+            merged_candidates
+    }
+
+
+    return (
+        candidate_list,
+        debug
     )
 
 
@@ -1304,6 +1710,21 @@ async def enrich_candidate_tags(
     }
 
 
+    enriched = dict(
+        candidate
+    )
+
+
+    enriched[
+        "top_tags"
+    ] = []
+
+
+    enriched[
+        "enrichment_error"
+    ] = None
+
+
     try:
 
         async with semaphore:
@@ -1320,40 +1741,58 @@ async def enrich_candidate_tags(
         data = response.json()
 
 
-    except Exception as error:
+    except httpx.TimeoutException:
 
-        print(
-            "Last.fm enrichment failed for "
-            f"{candidate['artist']} - "
-            f"{candidate['title']}: "
+        enriched[
+            "enrichment_error"
+        ] = "Last.fm enrichment timed out."
+
+        return enriched
+
+
+    except httpx.HTTPStatusError as error:
+
+        enriched[
+            "enrichment_error"
+        ] = (
+            "Last.fm enrichment returned HTTP "
+            f"{error.response.status_code}."
+        )
+
+        return enriched
+
+
+    except httpx.RequestError as error:
+
+        enriched[
+            "enrichment_error"
+        ] = (
+            "Last.fm enrichment network error: "
             f"{error}"
         )
 
+        return enriched
 
-        enriched = dict(
-            candidate
-        )
 
+    except ValueError:
 
         enriched[
-            "top_tags"
-        ] = []
-
+            "enrichment_error"
+        ] = (
+            "Last.fm enrichment returned invalid JSON."
+        )
 
         return enriched
 
 
     if "error" in data:
 
-        enriched = dict(
-            candidate
-        )
-
-
         enriched[
-            "top_tags"
-        ] = []
-
+            "enrichment_error"
+        ] = (
+            "Last.fm enrichment API error: "
+            f"{data.get('message', 'Unknown error')}"
+        )
 
         return enriched
 
@@ -1379,6 +1818,14 @@ async def enrich_candidate_tags(
         tag_data = [
             tag_data
         ]
+
+
+    if not isinstance(
+        tag_data,
+        list
+    ):
+
+        tag_data = []
 
 
     top_tags = []
@@ -1426,17 +1873,12 @@ async def enrich_candidate_tags(
         top_tags.append(
             {
                 "name":
-                    name,
+                    str(name).strip(),
 
                 "count":
                     count
             }
         )
-
-
-    enriched = dict(
-        candidate
-    )
 
 
     enriched[
@@ -1475,13 +1917,52 @@ async def enrich_shortlist_parallel(
         ]
 
 
-        return await asyncio.gather(
+        enriched = await asyncio.gather(
             *tasks
         )
 
 
+    warnings = []
+
+
+    for candidate in enriched:
+
+        error = candidate.get(
+            "enrichment_error"
+        )
+
+
+        if error:
+
+            warnings.append(
+                {
+                    "stage":
+                        "lastfm_enrichment",
+
+                    "track":
+                        candidate[
+                            "title"
+                        ],
+
+                    "artist":
+                        candidate[
+                            "artist"
+                        ],
+
+                    "message":
+                        error
+                }
+            )
+
+
+    return (
+        enriched,
+        warnings
+    )
+
+
 # =====================================================
-# EMBEDDING TEXT BUILDERS
+# EMBEDDING QUERY
 # =====================================================
 
 def build_embedding_query(
@@ -1502,32 +1983,14 @@ def build_embedding_query(
     )
 
 
-    summary = profile.get(
-        "summary",
-        ""
-    )
-
-
-    energy = profile.get(
-        "energy",
-        ""
-    )
-
-
-    vocals = profile.get(
-        "vocal_preference",
-        ""
-    )
-
-
     return (
         "search_query: "
         "Desired music profile. "
         f"Genres and styles: {retrieval_text}. "
         f"Semantic qualities: {semantic_text}. "
-        f"Overall sound: {summary}. "
-        f"Energy: {energy}. "
-        f"Vocals: {vocals}."
+        f"Overall sound: {profile.get('summary', '')}. "
+        f"Energy: {profile.get('energy', '')}. "
+        f"Vocals: {profile.get('vocal_preference', '')}."
     )
 
 
@@ -1571,15 +2034,16 @@ def build_candidate_embedding_document(
         ]
 
 
-    tag_text = ", ".join(
-        tag_names
-    )
-
-
     return (
         "search_document: "
         "Candidate music profile. "
-        f"Music tags and qualities: {tag_text}."
+        "Music tags and qualities: "
+        +
+        ", ".join(
+            tag_names
+        )
+        +
+        "."
     )
 
 
@@ -1644,7 +2108,7 @@ def cosine_similarity(
 
 
 # =====================================================
-# EMBEDDING CANDIDATES
+# EMBEDDING LAYER
 # =====================================================
 
 def attach_semantic_similarity(
@@ -1689,118 +2153,196 @@ def attach_semantic_similarity(
         )
 
 
+        ordered_data = sorted(
+            response.data,
+            key=lambda item:
+                item.index
+        )
+
+
+        vectors = [
+
+            item.embedding
+
+            for item
+            in ordered_data
+
+        ]
+
+
+        if len(
+            vectors
+        ) != len(
+            texts
+        ):
+
+            raise ValueError(
+                (
+                    "Embedding model returned "
+                    "an unexpected vector count."
+                )
+            )
+
+
+        query_vector = (
+            vectors[0]
+        )
+
+
+        semantic_candidates = []
+
+
+        for candidate, vector in zip(
+            candidates,
+            vectors[1:]
+        ):
+
+            candidate_copy = dict(
+                candidate
+            )
+
+
+            candidate_copy[
+                "semantic_similarity"
+            ] = cosine_similarity(
+                query_vector,
+                vector
+            )
+
+
+            semantic_candidates.append(
+                candidate_copy
+            )
+
+
+        return (
+            semantic_candidates,
+            True,
+            None
+        )
+
+
     except Exception as error:
 
-        raise HTTPException(
-            status_code=502,
-            detail={
-                "error":
-                    (
-                        f"{BUILD_ID}: "
-                        "Nova embedding request failed."
-                    ),
+        # Embeddings improve ranking but are not
+        # required to return recommendations.
+        #
+        # If nova-embed fails, Nova falls back to
+        # Last.fm tag + retrieval evidence rather
+        # than killing the whole POST request.
 
-                "message":
-                    str(error)
-            }
-        )
+        fallback_candidates = []
 
 
-    ordered_data = sorted(
-        response.data,
-        key=lambda item:
-            item.index
-    )
+        for candidate in candidates:
 
-
-    vectors = [
-
-        item.embedding
-
-        for item
-        in ordered_data
-
-    ]
-
-
-    if len(
-        vectors
-    ) != len(
-        texts
-    ):
-
-        raise HTTPException(
-            status_code=500,
-            detail=(
-                f"{BUILD_ID}: embedding model "
-                "returned an unexpected number "
-                "of vectors."
+            candidate_copy = dict(
+                candidate
             )
+
+
+            candidate_copy[
+                "semantic_similarity"
+            ] = None
+
+
+            fallback_candidates.append(
+                candidate_copy
+            )
+
+
+        warning = {
+            "stage":
+                "embedding_similarity",
+
+            "message":
+                (
+                    "Semantic embeddings were unavailable. "
+                    "Nova used Last.fm evidence only."
+                ),
+
+            "technical_error":
+                str(error)
+        }
+
+
+        return (
+            fallback_candidates,
+            False,
+            warning
         )
-
-
-    query_vector = (
-        vectors[0]
-    )
-
-
-    enriched = []
-
-
-    for candidate, vector in zip(
-        candidates,
-        vectors[1:]
-    ):
-
-        candidate_copy = dict(
-            candidate
-        )
-
-
-        candidate_copy[
-            "semantic_similarity"
-        ] = cosine_similarity(
-            query_vector,
-            vector
-        )
-
-
-        enriched.append(
-            candidate_copy
-        )
-
-
-    return enriched
 
 
 # =====================================================
-# SEMANTIC CALIBRATION
+# SEMANTIC CALIBRATION — 0.7.3
 # =====================================================
 
 def calibrate_semantic_similarity(
-    similarity: float
+    similarity
 ):
 
-    lower_bound = 0.55
-    upper_bound = 0.85
+    if similarity is None:
+        return 0.0
 
 
-    normalized = (
-        similarity
-        -
-        lower_bound
-    ) / (
-        upper_bound
-        -
-        lower_bound
+    # Sigmoid calibration.
+    #
+    # Our local tests showed that unrelated music
+    # can still produce cosine similarities in the
+    # mid/high 0.60s.
+    #
+    # This curve therefore gives little credit to
+    # mediocre semantic similarity and becomes much
+    # more generous once a candidate reaches the
+    # genuinely strong ~0.78+ region.
+    #
+    # Approximate behavior:
+    #
+    # 0.64 -> ~1%
+    # 0.68 -> ~5%
+    # 0.72 -> ~14%
+    # 0.78 -> 50%
+    # 0.81 -> ~71%
+    # 0.84 -> ~86%
+    # 0.88 -> ~95%
+
+    midpoint = 0.78
+    steepness = 30.0
+
+
+    exponent = (
+        -steepness
+        *
+        (
+            similarity
+            -
+            midpoint
+        )
     )
 
 
-    return min(
-        1.0,
+    # Protect math.exp from absurd unexpected
+    # values, even though cosine similarity
+    # should normally remain between -1 and 1.
+
+    exponent = min(
+        60.0,
         max(
-            0.0,
-            normalized
+            -60.0,
+            exponent
+        )
+    )
+
+
+    return (
+        1.0
+        /
+        (
+            1.0
+            +
+            math.exp(
+                exponent
+            )
         )
     )
 
@@ -1811,22 +2353,14 @@ def calibrate_semantic_similarity(
 
 def score_enriched_candidates(
     active_retrieval_tags,
-    enriched_candidates
+    enriched_candidates,
+    semantic_available
 ):
 
     desired_tags = (
         active_retrieval_tags
     )
 
-
-    # 0.7.2:
-    #
-    # Qwen can now contribute up to six active
-    # retrieval tags.
-    #
-    # Earlier tags still receive slightly more
-    # importance because Qwen orders them from
-    # strongest to broader.
 
     importance_weights = [
         1.00,
@@ -1859,6 +2393,45 @@ def score_enriched_candidates(
     ]
 
 
+    # Normal operation:
+    #
+    # 45% tag evidence
+    # 35% semantic
+    # 20% retrieval
+    #
+    # If embeddings fail, preserve the same
+    # relationship between the remaining two
+    # signals and rescale them instead of making
+    # every score artificially tiny.
+
+    if semantic_available:
+
+        tag_max_points = 45.0
+        semantic_max_points = 35.0
+        retrieval_max_points = 20.0
+
+
+    else:
+
+        tag_max_points = (
+            45.0
+            /
+            65.0
+            *
+            100.0
+        )
+
+        semantic_max_points = 0.0
+
+        retrieval_max_points = (
+            20.0
+            /
+            65.0
+            *
+            100.0
+        )
+
+
     scored = []
 
 
@@ -1879,8 +2452,6 @@ def score_enriched_candidates(
 
         # =========================================
         # 1. LAST.FM TRACK-SPECIFIC TAG EVIDENCE
-        #
-        # Maximum: 45 points
         # =========================================
 
         for desired_index, desired_tag in enumerate(
@@ -1893,7 +2464,8 @@ def score_enriched_candidates(
                 ]
 
                 if desired_index
-                < len(
+                <
+                len(
                     importance_weights
                 )
 
@@ -1994,7 +2566,7 @@ def score_enriched_candidates(
                 weighted_tag_evidence
                 /
                 total_importance
-            ) * 45
+            ) * tag_max_points
 
 
         else:
@@ -2005,15 +2577,12 @@ def score_enriched_candidates(
 
 
         # =========================================
-        # 2. EMBEDDING SEMANTIC FIT
-        #
-        # Maximum: 35 points
+        # 2. SEMANTIC EMBEDDING EVIDENCE
         # =========================================
 
         raw_semantic_similarity = (
             candidate.get(
-                "semantic_similarity",
-                0.0
+                "semantic_similarity"
             )
         )
 
@@ -2022,20 +2591,22 @@ def score_enriched_candidates(
             calibrate_semantic_similarity(
                 raw_semantic_similarity
             )
+
+            if semantic_available
+
+            else 0.0
         )
 
 
         semantic_points = (
             semantic_fit
             *
-            35
+            semantic_max_points
         )
 
 
         # =========================================
         # 3. LAST.FM RETRIEVAL EVIDENCE
-        #
-        # Maximum: 20 points
         # =========================================
 
         retrieval_evidence = (
@@ -2068,9 +2639,7 @@ def score_enriched_candidates(
 
             except ValueError:
 
-                desired_index = (
-                    0
-                )
+                continue
 
 
             importance = (
@@ -2079,7 +2648,8 @@ def score_enriched_candidates(
                 ]
 
                 if desired_index
-                < len(
+                <
+                len(
                     importance_weights
                 )
 
@@ -2106,13 +2676,15 @@ def score_enriched_candidates(
 
 
         retrieval_points = min(
-            20,
+            retrieval_max_points,
+
             (
                 retrieval_evidence
                 /
                 1.4
             )
-            * 20
+            *
+            retrieval_max_points
         )
 
 
@@ -2158,15 +2730,28 @@ def score_enriched_candidates(
                     score,
 
                 "semantic_similarity":
-                    round(
-                        raw_semantic_similarity,
-                        4
+                    (
+                        round(
+                            raw_semantic_similarity,
+                            4
+                        )
+
+                        if raw_semantic_similarity
+                        is not None
+
+                        else None
                     ),
 
                 "semantic_fit":
-                    round(
-                        semantic_fit,
-                        4
+                    (
+                        round(
+                            semantic_fit,
+                            4
+                        )
+
+                        if semantic_available
+
+                        else None
                     ),
 
                 "score_breakdown": {
@@ -2230,9 +2815,12 @@ def score_enriched_candidates(
                 "match_score"
             ],
 
-            item[
-                "semantic_similarity"
-            ],
+            (
+                item[
+                    "semantic_similarity"
+                ]
+                or 0
+            ),
 
             len(
                 item[
@@ -2245,32 +2833,62 @@ def score_enriched_candidates(
     )
 
 
-    return scored
+    return (
+        scored,
+        {
+            "lastfm_tag_evidence":
+                round(
+                    tag_max_points,
+                    2
+                ),
+
+            "semantic_similarity":
+                round(
+                    semantic_max_points,
+                    2
+                ),
+
+            "lastfm_retrieval":
+                round(
+                    retrieval_max_points,
+                    2
+                )
+        }
+    )
 
 
 # =====================================================
-# SELECT FINAL THREE
+# FINAL THREE
 # =====================================================
 
 def select_top_three(
     candidates
 ):
 
-    # This remains the user-facing behavior:
-    #
-    # Nova always returns THREE recommendations.
-
     if len(
         candidates
     ) < 3:
 
         raise HTTPException(
-            status_code=500,
-            detail=(
-                f"{BUILD_ID}: fewer than "
-                "three candidate tracks "
-                "were available."
-            )
+            status_code=502,
+            detail={
+                "error":
+                    (
+                        "Nova could not produce three "
+                        "rankable song candidates."
+                    ),
+
+                "stage":
+                    "final_selection",
+
+                "candidate_count":
+                    len(
+                        candidates
+                    ),
+
+                "build":
+                    BUILD_ID
+            }
         )
 
 
@@ -2314,7 +2932,7 @@ def select_top_three(
 
 
     # Fallback if artist diversity prevents
-    # us from reaching three.
+    # Nova from reaching three.
 
     if len(
         selected
@@ -2356,7 +2974,12 @@ def select_top_three(
         ]
 
 
-        if matched_tags:
+        if (
+            matched_tags
+            and
+            semantic_similarity
+            is not None
+        ):
 
             reason = (
                 "Last.fm's track-specific tags "
@@ -2371,13 +2994,35 @@ def select_top_three(
             )
 
 
-        else:
+        elif matched_tags:
+
+            reason = (
+                "Last.fm's track-specific tags "
+                "matched Nova's retrieval profile on "
+                +
+                ", ".join(
+                    matched_tags
+                )
+                +
+                "."
+            )
+
+
+        elif semantic_similarity is not None:
 
             reason = (
                 "The track's Last.fm music profile "
                 "showed semantic compatibility with "
                 "Nova's desired sound "
                 f"({semantic_similarity:.2f})."
+            )
+
+
+        else:
+
+            reason = (
+                "The track ranked strongly in "
+                "Nova's Last.fm retrieval results."
             )
 
 
@@ -2445,6 +3090,33 @@ def select_top_three(
         )
 
 
+    if len(
+        recommendations
+    ) != 3:
+
+        raise HTTPException(
+            status_code=500,
+            detail={
+                "error":
+                    (
+                        "Nova's final selection did not "
+                        "contain exactly three songs."
+                    ),
+
+                "stage":
+                    "final_selection",
+
+                "recommendation_count":
+                    len(
+                        recommendations
+                    ),
+
+                "build":
+                    BUILD_ID
+            }
+        )
+
+
     return recommendations
 
 
@@ -2469,12 +3141,12 @@ def root():
             EMBEDDING_MODEL_ID,
 
         "nova_mode":
-            "six-tag-balanced-hybrid"
+            "six-tag-sigmoid-hybrid"
     }
 
 
 # =====================================================
-# QWEN TEST
+# QWEN HEALTH TEST
 # =====================================================
 
 @app.get("/test-llm")
@@ -2533,13 +3205,22 @@ def test_llm():
             status_code=502,
             detail={
                 "error":
-                    str(error)
+                    "Qwen health check failed.",
+
+                "message":
+                    str(error),
+
+                "model":
+                    QWEN_MODEL_ID,
+
+                "build":
+                    BUILD_ID
             }
         )
 
 
 # =====================================================
-# EMBEDDING TEST
+# EMBEDDING HEALTH TEST
 # =====================================================
 
 @app.get("/test-embed")
@@ -2575,6 +3256,18 @@ def test_embed():
         )
 
 
+        if len(
+            ordered
+        ) != 2:
+
+            raise ValueError(
+                (
+                    "Embedding health check "
+                    "returned unexpected vector count."
+                )
+            )
+
+
         similarity = cosine_similarity(
             ordered[
                 0
@@ -2604,6 +3297,14 @@ def test_embed():
                 round(
                     similarity,
                     4
+                ),
+
+            "calibrated_fit":
+                round(
+                    calibrate_semantic_similarity(
+                        similarity
+                    ),
+                    4
                 )
         }
 
@@ -2614,13 +3315,22 @@ def test_embed():
             status_code=502,
             detail={
                 "error":
-                    str(error)
+                    "Embedding health check failed.",
+
+                "message":
+                    str(error),
+
+                "model":
+                    EMBEDDING_MODEL_ID,
+
+                "build":
+                    BUILD_ID
             }
         )
 
 
 # =====================================================
-# LAST.FM TEST
+# LAST.FM HEALTH TEST
 # =====================================================
 
 @app.get("/test-lastfm")
@@ -2633,12 +3343,36 @@ async def test_lastfm(
     ) as http_client:
 
 
-        tracks = await (
+        result = await (
             get_lastfm_tracks_for_tag(
                 http_client=http_client,
                 tag=tag,
                 limit=10
             )
+        )
+
+
+    if result[
+        "error"
+    ]:
+
+        raise HTTPException(
+            status_code=502,
+            detail={
+                "error":
+                    "Last.fm health check failed.",
+
+                "message":
+                    result[
+                        "error"
+                    ],
+
+                "tag":
+                    tag,
+
+                "build":
+                    BUILD_ID
+            }
         )
 
 
@@ -2651,11 +3385,15 @@ async def test_lastfm(
 
         "count":
             len(
-                tracks
+                result[
+                    "tracks"
+                ]
             ),
 
         "tracks":
-            tracks
+            result[
+                "tracks"
+            ]
     }
 
 
@@ -2731,6 +3469,9 @@ async def nova_recommend(
     )
 
 
+    warnings = []
+
+
     # ---------------------------------------------
     # 1. QWEN PROFILE
     # ---------------------------------------------
@@ -2786,7 +3527,7 @@ async def nova_recommend(
 
 
     # ---------------------------------------------
-    # 2. ALL SIX LAST.FM RETRIEVAL TAGS
+    # 2. LAST.FM RETRIEVAL
     # ---------------------------------------------
 
     search_start = (
@@ -2813,6 +3554,13 @@ async def nova_recommend(
     )
 
 
+    active_retrieval_tags = (
+        search_bundle[
+            "active_tags"
+        ]
+    )
+
+
     tag_results = (
         search_bundle[
             "tag_results"
@@ -2820,11 +3568,28 @@ async def nova_recommend(
     )
 
 
-    active_retrieval_tags = (
-        search_bundle[
-            "active_tags"
-        ]
-    )
+    if search_bundle[
+        "failed_queries"
+    ]:
+
+        warnings.append(
+            {
+                "stage":
+                    "lastfm_search",
+
+                "message":
+                    (
+                        "One or more Last.fm tag "
+                        "queries failed, but Nova had "
+                        "enough remaining results."
+                    ),
+
+                "failed_queries":
+                    search_bundle[
+                        "failed_queries"
+                    ]
+            }
+        )
 
 
     candidate_count = (
@@ -2836,17 +3601,14 @@ async def nova_recommend(
 
     # ---------------------------------------------
     # 3. BALANCED SHORTLIST
-    #
-    # Up to six usable tags × top two tracks.
-    #
-    # Still approximately twelve candidates.
     # ---------------------------------------------
 
-    shortlist = (
-        build_balanced_shortlist(
-            tag_results,
-            per_tag=2
-        )
+    (
+        shortlist,
+        shortlist_debug
+    ) = build_balanced_shortlist(
+        tag_results,
+        per_tag=2
     )
 
 
@@ -2855,12 +3617,23 @@ async def nova_recommend(
     ) < 3:
 
         raise HTTPException(
-            status_code=500,
-            detail=(
-                f"{BUILD_ID}: Last.fm "
-                "returned fewer than three "
-                "shortlist candidates."
-            )
+            status_code=502,
+            detail={
+                "error":
+                    (
+                        "Last.fm returned fewer than "
+                        "three unique shortlist candidates."
+                    ),
+
+                "stage":
+                    "shortlist",
+
+                "shortlist_debug":
+                    shortlist_debug,
+
+                "build":
+                    BUILD_ID
+            }
         )
 
 
@@ -2873,10 +3646,18 @@ async def nova_recommend(
     )
 
 
-    enriched = (
+    (
+        enriched,
+        enrichment_warnings
+    ) = (
         await enrich_shortlist_parallel(
             shortlist
         )
+    )
+
+
+    warnings.extend(
+        enrichment_warnings
     )
 
 
@@ -2891,7 +3672,7 @@ async def nova_recommend(
 
 
     # ---------------------------------------------
-    # 5. NOMIC SEMANTIC SIMILARITY
+    # 5. NOMIC EMBEDDINGS
     # ---------------------------------------------
 
     embedding_start = (
@@ -2899,7 +3680,11 @@ async def nova_recommend(
     )
 
 
-    semantic_candidates = (
+    (
+        semantic_candidates,
+        semantic_available,
+        embedding_warning
+    ) = (
         await asyncio.to_thread(
             attach_semantic_similarity,
 
@@ -2910,6 +3695,13 @@ async def nova_recommend(
             enriched
         )
     )
+
+
+    if embedding_warning:
+
+        warnings.append(
+            embedding_warning
+        )
 
 
     embedding_ms = round(
@@ -2926,16 +3718,20 @@ async def nova_recommend(
     # 6. HYBRID SCORING
     # ---------------------------------------------
 
-    scored = (
+    (
+        scored,
+        scoring_weights
+    ) = (
         score_enriched_candidates(
             active_retrieval_tags,
-            semantic_candidates
+            semantic_candidates,
+            semantic_available
         )
     )
 
 
     # ---------------------------------------------
-    # 7. FINAL THREE RECOMMENDATIONS
+    # 7. FINAL THREE
     # ---------------------------------------------
 
     recommendations = (
@@ -2955,6 +3751,10 @@ async def nova_recommend(
     )
 
 
+    # ---------------------------------------------
+    # RESPONSE
+    # ---------------------------------------------
+
     return {
         "build":
             BUILD_ID,
@@ -2966,7 +3766,7 @@ async def nova_recommend(
             EMBEDDING_MODEL_ID,
 
         "mode":
-            "six-tag-balanced-hybrid",
+            "six-tag-sigmoid-hybrid",
 
         "profile_source":
             profile_source,
@@ -2975,7 +3775,6 @@ async def nova_recommend(
             profile,
 
         "retrieval_debug": {
-
             "requested_tags":
                 profile[
                     "retrieval_tags"
@@ -2987,6 +3786,11 @@ async def nova_recommend(
             "dead_tags":
                 search_bundle[
                     "dead_tags"
+                ],
+
+            "failed_queries":
+                search_bundle[
+                    "failed_queries"
                 ],
 
             "candidate_strategy":
@@ -3006,6 +3810,9 @@ async def nova_recommend(
                 )
         },
 
+        "shortlist_debug":
+            shortlist_debug,
+
         "candidate_count":
             candidate_count,
 
@@ -3014,8 +3821,21 @@ async def nova_recommend(
                 shortlist
             ),
 
-        "timing_ms": {
+        "semantic_available":
+            semantic_available,
 
+        "semantic_calibration": {
+            "type":
+                "sigmoid",
+
+            "midpoint":
+                0.78,
+
+            "steepness":
+                30.0
+        },
+
+        "timing_ms": {
             "qwen_profile":
                 profile_ms,
 
@@ -3032,17 +3852,16 @@ async def nova_recommend(
                 total_ms
         },
 
-        "scoring_weights": {
+        "scoring_weights":
+            scoring_weights,
 
-            "lastfm_tag_evidence":
-                45,
+        "warning_count":
+            len(
+                warnings
+            ),
 
-            "semantic_similarity":
-                35,
-
-            "lastfm_retrieval":
-                20
-        },
+        "warnings":
+            warnings,
 
         "recommendation_count":
             len(
