@@ -3865,3 +3865,305 @@ document.addEventListener(
 // =====================================================
 
 updateHistory();
+
+// =====================================================
+// FRONTEND POLISH — MODULE INTROS + NOVA JOURNEY
+// =====================================================
+
+let currentNovaJourneyStep = 1;
+
+
+function setNovaJourneyStep(step) {
+
+    currentNovaJourneyStep =
+        Math.max(
+            1,
+            Math.min(
+                Number(step) || 1,
+                3
+            )
+        );
+
+
+    $$(".nova-step")
+        .forEach(item => {
+
+            const itemStep =
+                Number(
+                    item.dataset.novaStep
+                );
+
+
+            item.classList.remove(
+                "active",
+                "completed",
+                "upcoming"
+            );
+
+
+            item.removeAttribute(
+                "aria-current"
+            );
+
+
+            if (
+                itemStep ===
+                currentNovaJourneyStep
+            ) {
+
+                item.classList.add(
+                    "active"
+                );
+
+
+                item.setAttribute(
+                    "aria-current",
+                    "step"
+                );
+
+            }
+
+            else if (
+                itemStep <
+                currentNovaJourneyStep
+            ) {
+
+                item.classList.add(
+                    "completed"
+                );
+
+            }
+
+            else {
+
+                item.classList.add(
+                    "upcoming"
+                );
+
+            }
+
+        });
+
+}
+
+
+// =====================================================
+// MODULE INTRO BUTTONS
+// =====================================================
+
+$$(
+    "[data-scroll-target]"
+)
+    .forEach(button => {
+
+        button.addEventListener(
+            "click",
+            () => {
+
+                const target =
+                    document.querySelector(
+                        button.dataset.scrollTarget
+                    );
+
+
+                target?.scrollIntoView({
+                    behavior:
+                        "smooth",
+
+                    block:
+                        "start"
+                });
+
+            }
+        );
+
+    });
+
+
+// =====================================================
+// NOVA STEP 1
+// =====================================================
+
+// Any new submission represents a fresh brief.
+// The existing backend submit listener still does all
+// of the real Nova work.
+
+$("#novaForm")
+    ?.addEventListener(
+        "submit",
+        () => {
+
+            setNovaJourneyStep(
+                1
+            );
+
+        }
+    );
+
+
+$("#novaForm")
+    ?.addEventListener(
+        "reset",
+        () => {
+
+            setNovaJourneyStep(
+                1
+            );
+
+        }
+    );
+
+
+$("#rerunTrackfit")
+    ?.addEventListener(
+        "click",
+        () => {
+
+            setNovaJourneyStep(
+                1
+            );
+
+        }
+    );
+
+
+// =====================================================
+// NOVA STEP 2
+// =====================================================
+
+// Your existing Nova frontend replaces #songResults:
+//
+// 1. Loading placeholders
+// 2. An error state
+// 3. Three real recommendations
+//
+// We only advance to Step 2 when all three real
+// "Choose this song" buttons actually exist.
+//
+// This means the UI reflects the real backend result,
+// not merely the fact that the user clicked Submit.
+
+const novaSongResults =
+    $("#songResults");
+
+
+if (novaSongResults) {
+
+    const novaResultsObserver =
+        new MutationObserver(
+            () => {
+
+                const recommendationButtons =
+                    novaSongResults
+                        .querySelectorAll(
+                            ".choose-song"
+                        );
+
+
+                if (
+                    recommendationButtons.length ===
+                    3
+                ) {
+
+                    setNovaJourneyStep(
+                        2
+                    );
+
+                }
+
+            }
+        );
+
+
+    novaResultsObserver.observe(
+        novaSongResults,
+        {
+            childList:
+                true,
+
+            subtree:
+                true
+        }
+    );
+
+
+    // =================================================
+    // NOVA STEP 3
+    // =================================================
+    //
+    // The recommendation cards are created dynamically,
+    // so delegation lets one listener handle whichever
+    // three songs Nova returns.
+
+    novaSongResults.addEventListener(
+        "click",
+        event => {
+
+            const chooseButton =
+                event.target.closest(
+                    ".choose-song"
+                );
+
+
+            if (!chooseButton) {
+                return;
+            }
+
+
+            setNovaJourneyStep(
+                3
+            );
+
+        }
+    );
+
+}
+
+
+// =====================================================
+// NOVA → PULSAR HANDOFF
+// =====================================================
+
+// Normal navigation to Pulsar intentionally begins at
+// the new explanation section.
+//
+// The Nova handoff is different. Once the user has
+// already chosen a song, the existing handoff code
+// switches to Pulsar and populates the selected track.
+//
+// This listener then moves directly to the workspace
+// so that the user does not have to manually scroll
+// past the introduction they have effectively already
+// progressed beyond.
+
+$("#continueToBlueprint")
+    ?.addEventListener(
+        "click",
+        () => {
+
+            window.requestAnimationFrame(
+                () => {
+
+                    $("#pulsarWorkflow")
+                        ?.scrollIntoView({
+                            behavior:
+                                "smooth",
+
+                            block:
+                                "start"
+                        });
+
+                }
+            );
+
+        }
+    );
+
+
+// =====================================================
+// INITIAL NOVA JOURNEY STATE
+// =====================================================
+
+setNovaJourneyStep(
+    1
+);

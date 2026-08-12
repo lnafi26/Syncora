@@ -1762,3 +1762,3198 @@ tbody tr:hover {
         animation: none;
     }
 }
+
+/* ==========================================================
+   FRONTEND CLEANUP
+   LAUNCHPAD + MODULE INTROS + NOVA JOURNEY
+   ========================================================== */
+
+
+/* ----------------------------------------------------------
+   SCROLL TARGETS
+   ---------------------------------------------------------- */
+
+#novaWorkflow,
+#pulsarWorkflow {
+    scroll-margin-top: 118px;
+}
+
+
+/* ----------------------------------------------------------
+   LAUNCHPAD STORY
+   ---------------------------------------------------------- */
+
+.launch-story {
+    display: grid;
+    grid-template-columns:
+        minmax(0, .9fr)
+        minmax(0, 1.1fr);
+
+    gap:
+        clamp(
+            40px,
+            7vw,
+            110px
+        );
+
+    align-items: start;
+
+    padding:
+        clamp(
+            88px,
+            10vw,
+            148px
+        )
+        clamp(
+            8px,
+            2vw,
+            24px
+        )
+        34px;
+}
+
+
+.launch-story-heading h2 {
+    max-width: 720px;
+
+    margin:
+        10px
+        0
+        0;
+
+    font-size:
+        clamp(
+            2.5rem,
+            5vw,
+            4.8rem
+        );
+
+    font-weight: 620;
+
+    line-height: .98;
+
+    letter-spacing:
+        -.055em;
+}
+
+
+.launch-story-copy {
+    max-width: 660px;
+
+    padding-top: 26px;
+}
+
+
+.launch-story-copy p {
+    margin:
+        0
+        0
+        24px;
+
+    color: var(--muted);
+
+    font-size:
+        clamp(
+            1rem,
+            1.4vw,
+            1.15rem
+        );
+
+    line-height: 1.72;
+}
+
+
+/* ----------------------------------------------------------
+   CROWN JEWELS
+   ---------------------------------------------------------- */
+
+.crown-section {
+    padding-top: 16px;
+}
+
+
+.crown-heading {
+    margin-top: 54px;
+}
+
+
+.jewel-grid {
+    display: grid;
+
+    grid-template-columns:
+        repeat(
+            2,
+            minmax(0, 1fr)
+        );
+
+    gap: 20px;
+}
+
+
+.jewel-card {
+    position: relative;
+
+    overflow: hidden;
+
+    min-width: 0;
+    min-height: 570px;
+
+    display: grid;
+
+    grid-template-rows:
+        minmax(
+            300px,
+            1fr
+        )
+        auto;
+
+    color: var(--text);
+
+    text-decoration: none;
+
+    border:
+        1px solid
+        rgba(
+            255,
+            255,
+            255,
+            .07
+        );
+
+    border-radius: 34px;
+
+    background:
+        linear-gradient(
+            145deg,
+            rgba(
+                31,
+                32,
+                37,
+                .78
+            ),
+            rgba(
+                15,
+                16,
+                20,
+                .78
+            )
+        );
+
+    box-shadow:
+        inset
+        0
+        1px
+        rgba(
+            255,
+            255,
+            255,
+            .035
+        );
+
+    transition:
+        transform 220ms ease,
+        border-color 220ms ease,
+        box-shadow 220ms ease;
+}
+
+
+.jewel-card:hover {
+    transform:
+        translateY(
+            -4px
+        );
+
+    border-color:
+        rgba(
+            255,
+            255,
+            255,
+            .13
+        );
+
+    box-shadow:
+        0
+        28px
+        80px
+        rgba(
+            0,
+            0,
+            0,
+            .2
+        );
+}
+
+
+.jewel-card:active {
+    transform:
+        scale(
+            .992
+        );
+}
+
+
+.jewel-card:focus-visible {
+    outline:
+        3px solid
+        rgba(
+            185,
+            255,
+            102,
+            .34
+        );
+
+    outline-offset:
+        4px;
+}
+
+
+.jewel-visual {
+    position: relative;
+
+    min-height: 320px;
+
+    overflow: hidden;
+
+    background:
+        radial-gradient(
+            circle
+            at
+            50%
+            42%,
+            rgba(
+                185,
+                255,
+                102,
+                .075
+            ),
+            transparent
+            52%
+        );
+}
+
+
+.jewel-copy {
+    display: flex;
+
+    align-items: end;
+
+    justify-content:
+        space-between;
+
+    gap: 26px;
+
+    padding: 34px;
+}
+
+
+.jewel-copy h3 {
+    max-width: 430px;
+
+    margin:
+        7px
+        0
+        11px;
+
+    font-size:
+        clamp(
+            1.85rem,
+            3vw,
+            2.85rem
+        );
+
+    font-weight: 620;
+
+    line-height: 1;
+
+    letter-spacing:
+        -.047em;
+}
+
+
+.jewel-copy p:not(.eyebrow) {
+    max-width: 510px;
+
+    margin: 0;
+
+    color: var(--muted);
+
+    font-size: .9rem;
+
+    line-height: 1.62;
+}
+
+
+.jewel-link {
+    flex:
+        0
+        0
+        auto;
+
+    display:
+        inline-flex;
+
+    align-items:
+        center;
+
+    gap: 8px;
+
+    padding-bottom:
+        3px;
+
+    color:
+        var(--text);
+
+    font-size:
+        .8rem;
+
+    font-weight:
+        620;
+
+    white-space:
+        nowrap;
+}
+
+
+.jewel-link b {
+    color:
+        var(--accent);
+
+    font-size:
+        1rem;
+
+    font-weight:
+        600;
+
+    transition:
+        transform
+        160ms
+        ease;
+}
+
+
+.jewel-card:hover
+.jewel-link b {
+    transform:
+        translateX(
+            4px
+        );
+}
+
+
+/* ----------------------------------------------------------
+   NOVA JEWEL VISUAL
+   ---------------------------------------------------------- */
+
+.nova-jewel-visual {
+    display: flex;
+
+    align-items:
+        center;
+
+    justify-content:
+        center;
+
+    gap: 14px;
+
+    padding: 38px;
+}
+
+
+.mini-track {
+    width: 28%;
+
+    height: 190px;
+
+    padding: 15px;
+
+    border:
+        1px solid
+        rgba(
+            255,
+            255,
+            255,
+            .07
+        );
+
+    border-radius: 20px;
+
+    background:
+        rgba(
+            255,
+            255,
+            255,
+            .035
+        );
+
+    transform:
+        translateY(
+            12px
+        );
+}
+
+
+.mini-track.selected {
+    height: 220px;
+
+    transform:
+        translateY(
+            0
+        );
+
+    border-color:
+        rgba(
+            185,
+            255,
+            102,
+            .42
+        );
+
+    background:
+        rgba(
+            185,
+            255,
+            102,
+            .055
+        );
+
+    box-shadow:
+        0
+        24px
+        70px
+        rgba(
+            0,
+            0,
+            0,
+            .25
+        );
+}
+
+
+.mini-track i {
+    display: block;
+
+    height: 55%;
+
+    border-radius:
+        13px;
+
+    background:
+        radial-gradient(
+            circle
+            at
+            30%
+            25%,
+            rgba(
+                255,
+                255,
+                255,
+                .16
+            ),
+            transparent
+            24%
+        ),
+        linear-gradient(
+            145deg,
+            rgba(
+                112,
+                166,
+                255,
+                .48
+            ),
+            rgba(
+                170,
+                140,
+                255,
+                .38
+            )
+        );
+}
+
+
+.mini-track span {
+    display: block;
+
+    width: 64%;
+
+    height: 5px;
+
+    margin-top: 18px;
+
+    border-radius:
+        999px;
+
+    background:
+        rgba(
+            255,
+            255,
+            255,
+            .16
+        );
+}
+
+
+.mini-track.selected span {
+    background:
+        var(--accent);
+}
+
+
+/* ----------------------------------------------------------
+   PULSAR JEWEL VISUAL
+   ---------------------------------------------------------- */
+
+.pulsar-jewel-visual {
+    display: grid;
+
+    place-items:
+        center;
+
+    padding: 40px;
+}
+
+
+.mini-wave {
+    width: 88%;
+
+    height: 112px;
+
+    display: flex;
+
+    align-items:
+        center;
+
+    gap: 6px;
+}
+
+
+.mini-wave i {
+    flex: 1;
+
+    min-width: 3px;
+
+    border-radius:
+        999px;
+
+    background:
+        linear-gradient(
+            to top,
+            rgba(
+                112,
+                166,
+                255,
+                .38
+            ),
+            var(--accent)
+        );
+}
+
+
+.mini-wave i:nth-child(1) {
+    height: 26%;
+}
+
+.mini-wave i:nth-child(2) {
+    height: 48%;
+}
+
+.mini-wave i:nth-child(3) {
+    height: 78%;
+}
+
+.mini-wave i:nth-child(4) {
+    height: 43%;
+}
+
+.mini-wave i:nth-child(5) {
+    height: 92%;
+}
+
+.mini-wave i:nth-child(6) {
+    height: 58%;
+}
+
+.mini-wave i:nth-child(7) {
+    height: 72%;
+}
+
+.mini-wave i:nth-child(8) {
+    height: 38%;
+}
+
+.mini-wave i:nth-child(9) {
+    height: 88%;
+}
+
+.mini-wave i:nth-child(10) {
+    height: 54%;
+}
+
+.mini-wave i:nth-child(11) {
+    height: 96%;
+}
+
+.mini-wave i:nth-child(12) {
+    height: 42%;
+}
+
+.mini-wave i:nth-child(13) {
+    height: 73%;
+}
+
+.mini-wave i:nth-child(14) {
+    height: 52%;
+}
+
+.mini-wave i:nth-child(15) {
+    height: 82%;
+}
+
+.mini-wave i:nth-child(16) {
+    height: 32%;
+}
+
+
+.mini-signal-line {
+    position: absolute;
+
+    left: 8%;
+    right: 8%;
+
+    bottom: 72px;
+
+    height: 1px;
+
+    background:
+        rgba(
+            255,
+            255,
+            255,
+            .12
+        );
+}
+
+
+.mini-signal-line span {
+    position: absolute;
+
+    top: 50%;
+
+    width: 12px;
+    height: 12px;
+
+    transform:
+        translate(
+            -50%,
+            -50%
+        );
+
+    border-radius:
+        50%;
+
+    background:
+        var(--accent);
+
+    box-shadow:
+        0
+        0
+        0
+        6px
+        rgba(
+            185,
+            255,
+            102,
+            .06
+        );
+}
+
+
+/* ----------------------------------------------------------
+   MODULE INTRODUCTIONS
+   ---------------------------------------------------------- */
+
+.module-intro {
+    position: relative;
+
+    overflow: hidden;
+
+    display: grid;
+
+    grid-template-columns:
+        minmax(
+            0,
+            .95fr
+        )
+        minmax(
+            360px,
+            1.05fr
+        );
+
+    gap:
+        clamp(
+            40px,
+            7vw,
+            100px
+        );
+
+    align-items:
+        center;
+
+    min-height:
+        min(
+            720px,
+            calc(
+                100vh
+                -
+                120px
+            )
+        );
+
+    margin-top:
+        24px;
+
+    padding:
+        clamp(
+            46px,
+            7vw,
+            96px
+        );
+
+    border:
+        1px solid
+        rgba(
+            255,
+            255,
+            255,
+            .07
+        );
+
+    border-radius:
+        38px;
+
+    background:
+        radial-gradient(
+            circle
+            at
+            82%
+            20%,
+            rgba(
+                185,
+                255,
+                102,
+                .07
+            ),
+            transparent
+            30%
+        ),
+        radial-gradient(
+            circle
+            at
+            12%
+            92%,
+            rgba(
+                112,
+                166,
+                255,
+                .055
+            ),
+            transparent
+            34%
+        ),
+        linear-gradient(
+            145deg,
+            rgba(
+                26,
+                27,
+                31,
+                .82
+            ),
+            rgba(
+                13,
+                14,
+                17,
+                .82
+            )
+        );
+
+    box-shadow:
+        inset
+        0
+        1px
+        rgba(
+            255,
+            255,
+            255,
+            .035
+        ),
+        0
+        34px
+        100px
+        rgba(
+            0,
+            0,
+            0,
+            .2
+        );
+}
+
+
+.module-intro-copy {
+    position: relative;
+
+    z-index: 2;
+}
+
+
+.module-intro h2 {
+    max-width: 740px;
+
+    margin:
+        14px
+        0
+        22px;
+
+    font-size:
+        clamp(
+            3.1rem,
+            6vw,
+            6rem
+        );
+
+    font-weight:
+        630;
+
+    line-height:
+        .92;
+
+    letter-spacing:
+        -.06em;
+}
+
+
+.module-intro-lead {
+    max-width:
+        620px;
+
+    margin:
+        0
+        0
+        14px;
+
+    color:
+        var(--text);
+
+    font-size:
+        clamp(
+            1.15rem,
+            1.7vw,
+            1.45rem
+        );
+
+    line-height:
+        1.45;
+}
+
+
+.module-intro-body {
+    max-width:
+        630px;
+
+    margin: 0;
+
+    color:
+        var(--muted);
+
+    font-size:
+        .95rem;
+
+    line-height:
+        1.75;
+}
+
+
+.module-intro-actions {
+    margin-top:
+        30px;
+}
+
+
+.module-intro-visual {
+    position:
+        relative;
+
+    min-height:
+        360px;
+
+    overflow:
+        hidden;
+
+    border:
+        1px solid
+        rgba(
+            255,
+            255,
+            255,
+            .055
+        );
+
+    border-radius:
+        30px;
+
+    background:
+        rgba(
+            255,
+            255,
+            255,
+            .022
+        );
+
+    box-shadow:
+        inset
+        0
+        1px
+        rgba(
+            255,
+            255,
+            255,
+            .04
+        );
+}
+
+
+.module-use-cases {
+    grid-column:
+        1
+        /
+        -1;
+
+    display:
+        grid;
+
+    grid-template-columns:
+        repeat(
+            3,
+            minmax(
+                0,
+                1fr
+            )
+        );
+
+    padding-top:
+        30px;
+
+    border-top:
+        1px solid
+        rgba(
+            255,
+            255,
+            255,
+            .07
+        );
+}
+
+
+.module-use-cases > div {
+    min-width: 0;
+
+    padding:
+        0
+        30px;
+}
+
+
+.module-use-cases > div:first-child {
+    padding-left: 0;
+}
+
+
+.module-use-cases > div:last-child {
+    padding-right: 0;
+}
+
+
+.module-use-cases > div + div {
+    border-left:
+        1px solid
+        rgba(
+            255,
+            255,
+            255,
+            .07
+        );
+}
+
+
+.module-use-cases span,
+.module-use-cases strong {
+    display: block;
+}
+
+
+.module-use-cases span {
+    margin-bottom:
+        6px;
+
+    color:
+        var(--muted-2);
+
+    font-size:
+        .67rem;
+
+    font-weight:
+        650;
+
+    letter-spacing:
+        .08em;
+
+    text-transform:
+        uppercase;
+}
+
+
+.module-use-cases strong {
+    max-width:
+        300px;
+
+    font-size:
+        .85rem;
+
+    font-weight:
+        570;
+
+    line-height:
+        1.5;
+}
+
+
+/* ----------------------------------------------------------
+   NOVA INTRO VISUAL
+   ---------------------------------------------------------- */
+
+.nova-intro-visual {
+    display: grid;
+
+    place-items:
+        center;
+}
+
+
+.nova-orbit {
+    position: absolute;
+
+    border:
+        1px solid
+        rgba(
+            185,
+            255,
+            102,
+            .1
+        );
+
+    border-radius:
+        50%;
+}
+
+
+.nova-orbit-one {
+    width:
+        390px;
+
+    height:
+        390px;
+}
+
+
+.nova-orbit-two {
+    width:
+        265px;
+
+    height:
+        265px;
+}
+
+
+.nova-visual-card {
+    position: absolute;
+
+    width:
+        150px;
+
+    height:
+        190px;
+
+    padding:
+        14px;
+
+    border:
+        1px solid
+        rgba(
+            255,
+            255,
+            255,
+            .08
+        );
+
+    border-radius:
+        22px;
+
+    background:
+        rgba(
+            24,
+            25,
+            29,
+            .86
+        );
+
+    box-shadow:
+        0
+        24px
+        70px
+        rgba(
+            0,
+            0,
+            0,
+            .24
+        );
+}
+
+
+.nova-visual-card span {
+    display: block;
+
+    height:
+        112px;
+
+    border-radius:
+        15px;
+
+    background:
+        radial-gradient(
+            circle
+            at
+            32%
+            25%,
+            rgba(
+                255,
+                255,
+                255,
+                .18
+            ),
+            transparent
+            24%
+        ),
+        linear-gradient(
+            145deg,
+            rgba(
+                112,
+                166,
+                255,
+                .46
+            ),
+            rgba(
+                170,
+                140,
+                255,
+                .36
+            )
+        );
+}
+
+
+.nova-visual-card strong {
+    display: block;
+
+    margin-top:
+        14px;
+
+    color:
+        var(--muted);
+
+    font-size:
+        .7rem;
+
+    font-weight:
+        620;
+}
+
+
+.nova-visual-card-one {
+    transform:
+        translate(
+            -120px,
+            38px
+        )
+        rotate(
+            -8deg
+        );
+}
+
+
+.nova-visual-card-two {
+    z-index: 3;
+
+    transform:
+        translateY(
+            -16px
+        );
+}
+
+
+.nova-visual-card-two.active {
+    border-color:
+        rgba(
+            185,
+            255,
+            102,
+            .5
+        );
+
+    background:
+        rgba(
+            27,
+            31,
+            25,
+            .9
+        );
+
+    box-shadow:
+        0
+        30px
+        80px
+        rgba(
+            0,
+            0,
+            0,
+            .3
+        ),
+        0
+        0
+        0
+        1px
+        rgba(
+            185,
+            255,
+            102,
+            .08
+        );
+}
+
+
+.nova-visual-card-two.active strong {
+    color:
+        var(--accent);
+}
+
+
+.nova-visual-card-three {
+    transform:
+        translate(
+            120px,
+            38px
+        )
+        rotate(
+            8deg
+        );
+}
+
+
+/* ----------------------------------------------------------
+   PULSAR INTRO VISUAL
+   ---------------------------------------------------------- */
+
+.pulsar-intro-visual {
+    display: grid;
+
+    align-content:
+        center;
+
+    padding:
+        46px;
+}
+
+
+.pulsar-demo-wave {
+    height:
+        140px;
+
+    display:
+        flex;
+
+    align-items:
+        center;
+
+    gap:
+        7px;
+}
+
+
+.pulsar-demo-wave i {
+    flex: 1;
+
+    min-width:
+        4px;
+
+    border-radius:
+        999px;
+
+    background:
+        linear-gradient(
+            to top,
+            rgba(
+                112,
+                166,
+                255,
+                .45
+            ),
+            var(--accent)
+        );
+}
+
+
+.pulsar-demo-line {
+    position:
+        relative;
+
+    height:
+        60px;
+
+    margin-top:
+        30px;
+
+    border-top:
+        1px solid
+        rgba(
+            255,
+            255,
+            255,
+            .11
+        );
+}
+
+
+.pulsar-demo-line::after {
+    content:
+        "Signal";
+
+    position:
+        absolute;
+
+    right: 0;
+
+    top:
+        16px;
+
+    color:
+        var(--muted-2);
+
+    font-size:
+        .64rem;
+
+    letter-spacing:
+        .06em;
+
+    text-transform:
+        uppercase;
+}
+
+
+.pulsar-demo-line span {
+    position:
+        absolute;
+
+    top:
+        -7px;
+
+    width:
+        13px;
+
+    height:
+        13px;
+
+    transform:
+        translateX(
+            -50%
+        );
+
+    border:
+        3px solid
+        rgba(
+            21,
+            23,
+            28,
+            .95
+        );
+
+    border-radius:
+        50%;
+}
+
+
+.pulsar-demo-line .primary {
+    background:
+        var(--accent);
+
+    box-shadow:
+        0
+        0
+        0
+        1px
+        var(--accent);
+}
+
+
+.pulsar-demo-line .secondary {
+    background:
+        var(--blue);
+
+    box-shadow:
+        0
+        0
+        0
+        1px
+        var(--blue);
+}
+
+
+/* ----------------------------------------------------------
+   NOVA JOURNEY LAYOUT
+   ---------------------------------------------------------- */
+
+.nova-shell {
+    display: grid;
+
+    grid-template-columns:
+        minmax(
+            0,
+            1fr
+        )
+        300px;
+
+    align-items:
+        start;
+
+    gap:
+        20px;
+
+    margin-top:
+        34px;
+
+    scroll-margin-top:
+        118px;
+}
+
+
+.nova-main {
+    min-width:
+        0;
+}
+
+
+.nova-journey {
+    position:
+        sticky;
+
+    top:
+        114px;
+
+    align-self:
+        start;
+
+    max-height:
+        calc(
+            100vh
+            -
+            138px
+        );
+
+    overflow:
+        auto;
+}
+
+
+.nova-step {
+    position:
+        relative;
+
+    opacity:
+        1;
+
+    transition:
+        opacity
+        180ms
+        ease,
+        transform
+        180ms
+        ease,
+        color
+        180ms
+        ease;
+}
+
+
+.nova-step:not(:last-child)::after {
+    content:
+        "";
+
+    position:
+        absolute;
+
+    left:
+        16px;
+
+    top:
+        43px;
+
+    bottom:
+        -8px;
+
+    width:
+        1px;
+
+    background:
+        rgba(
+            255,
+            255,
+            255,
+            .06
+        );
+}
+
+
+/* Future */
+
+.nova-step.upcoming {
+    opacity:
+        .34;
+}
+
+
+.nova-step.upcoming > span {
+    color:
+        var(--muted-2);
+
+    border-color:
+        rgba(
+            255,
+            255,
+            255,
+            .07
+        );
+
+    background:
+        rgba(
+            255,
+            255,
+            255,
+            .025
+        );
+}
+
+
+/* Completed */
+
+.nova-step.completed {
+    opacity:
+        .72;
+}
+
+
+.nova-step.completed > span {
+    color:
+        rgba(
+            245,
+            245,
+            247,
+            .82
+        );
+
+    border-color:
+        rgba(
+            255,
+            255,
+            255,
+            .12
+        );
+
+    background:
+        rgba(
+            255,
+            255,
+            255,
+            .09
+        );
+}
+
+
+.nova-step.completed strong {
+    color:
+        rgba(
+            245,
+            245,
+            247,
+            .76
+        );
+}
+
+
+/* Current */
+
+.nova-step.active {
+    opacity:
+        1;
+}
+
+
+.nova-step.active > span {
+    color:
+        #141810;
+
+    border-color:
+        var(--accent);
+
+    background:
+        var(--accent);
+
+    box-shadow:
+        0
+        0
+        0
+        4px
+        rgba(
+            185,
+            255,
+            102,
+            .08
+        );
+}
+
+
+.nova-step.active strong {
+    color:
+        var(--text);
+}
+
+
+.nova-step.active small {
+    color:
+        var(--muted);
+}
+
+
+.nova-main
+.results-section
+.section-heading {
+    margin-top:
+        70px;
+}
+
+
+/* ----------------------------------------------------------
+   RESPONSIVE
+   ---------------------------------------------------------- */
+
+@media (
+    max-width:
+    1100px
+) {
+
+    .module-intro {
+        grid-template-columns:
+            1fr;
+
+        min-height:
+            auto;
+    }
+
+
+    .module-intro-visual {
+        min-height:
+            330px;
+    }
+
+}
+
+
+@media (
+    max-width:
+    900px
+) {
+
+    .launch-story,
+    .jewel-grid {
+        grid-template-columns:
+            1fr;
+    }
+
+
+    .module-use-cases {
+        grid-template-columns:
+            1fr;
+    }
+
+
+    .module-use-cases > div {
+        padding:
+            18px
+            0;
+    }
+
+
+    .module-use-cases > div + div {
+        border-left:
+            0;
+
+        border-top:
+            1px solid
+            rgba(
+                255,
+                255,
+                255,
+                .07
+            );
+    }
+
+}
+
+
+@media (
+    max-width:
+    860px
+) {
+
+    .nova-shell {
+        grid-template-columns:
+            1fr;
+    }
+
+
+    .nova-journey {
+        position:
+            static;
+
+        order:
+            -1;
+
+        max-height:
+            none;
+    }
+
+}
+
+
+@media (
+    max-width:
+    680px
+) {
+
+    .launch-story {
+        gap:
+            14px;
+
+        padding-top:
+            72px;
+    }
+
+
+    .launch-story-heading h2 {
+        font-size:
+            clamp(
+                2.35rem,
+                12vw,
+                3.8rem
+            );
+    }
+
+
+    .jewel-card {
+        min-height:
+            500px;
+
+        border-radius:
+            28px;
+    }
+
+
+    .jewel-copy {
+        align-items:
+            flex-start;
+
+        flex-direction:
+            column;
+
+        padding:
+            26px;
+    }
+
+
+    .module-intro {
+        padding:
+            38px
+            24px;
+
+        border-radius:
+            28px;
+    }
+
+
+    .module-intro h2 {
+        font-size:
+            clamp(
+                2.65rem,
+                14vw,
+                4rem
+            );
+    }
+
+
+    .module-intro-visual {
+        min-height:
+            285px;
+    }
+
+
+    .nova-visual-card {
+        width:
+            118px;
+
+        height:
+            158px;
+    }
+
+
+    .nova-visual-card span {
+        height:
+            88px;
+    }
+
+
+    .nova-visual-card-one {
+        transform:
+            translate(
+                -84px,
+                30px
+            )
+            rotate(
+                -7deg
+            );
+    }
+
+
+    .nova-visual-card-three {
+        transform:
+            translate(
+                84px,
+                30px
+            )
+            rotate(
+                7deg
+            );
+    }
+
+
+    .pulsar-intro-visual {
+        padding:
+            30px
+            22px;
+    }
+
+}
+
+
+/* ----------------------------------------------------------
+   REDUCED MOTION
+   ---------------------------------------------------------- */
+
+@media (
+    prefers-reduced-motion:
+    reduce
+) {
+
+    .jewel-card,
+    .jewel-link b,
+    .nova-step {
+        transition:
+            none;
+    }
+
+
+    .jewel-card:hover,
+    .jewel-card:active {
+        transform:
+            none;
+    }
+
+}
+
+/* ==========================================================
+   SYNCHORA — COSMIC COLOR SYSTEM
+   Deep Space / Stellar Violet / Pulsar Cyan
+   ========================================================== */
+
+
+/* ----------------------------------------------------------
+   CORE PALETTE
+   ---------------------------------------------------------- */
+
+:root {
+
+    color-scheme: dark;
+
+
+    /* Space */
+
+    --bg:
+        #070811;
+
+    --surface:
+        rgba(
+            20,
+            22,
+            32,
+            .72
+        );
+
+    --surface-2:
+        rgba(
+            255,
+            255,
+            255,
+            .055
+        );
+
+    --surface-3:
+        #25283a;
+
+
+    /* Structure */
+
+    --border:
+        rgba(
+            170,
+            178,
+            255,
+            .10
+        );
+
+    --border-strong:
+        rgba(
+            170,
+            178,
+            255,
+            .18
+        );
+
+
+    /* Typography */
+
+    --text:
+        #f7f8fc;
+
+    --muted:
+        rgba(
+            237,
+            240,
+            255,
+            .68
+        );
+
+    --muted-2:
+        rgba(
+            220,
+            225,
+            255,
+            .42
+        );
+
+
+    /* Primary brand color
+       "Stellar Violet" */
+
+    --accent:
+        #958bff;
+
+    --accent-strong:
+        #ada5ff;
+
+    --accent-soft:
+        rgba(
+            149,
+            139,
+            255,
+            .12
+        );
+
+
+    /* Secondary astronomy colors */
+
+    --blue:
+        #5ed6ff;
+
+    --purple:
+        #c58cff;
+
+
+    /* Module identities */
+
+    --nova:
+        #b78cff;
+
+    --pulsar:
+        #5ed6ff;
+
+
+    /* Danger remains semantic */
+
+    --danger:
+        #ff7373;
+
+
+    /* Cosmic glows */
+
+    --stellar-glow:
+        rgba(
+            149,
+            139,
+            255,
+            .18
+        );
+
+    --pulsar-glow:
+        rgba(
+            94,
+            214,
+            255,
+            .16
+        );
+
+}
+
+
+/* ----------------------------------------------------------
+   PAGE BACKGROUND
+   ---------------------------------------------------------- */
+
+body {
+
+    background:
+
+        radial-gradient(
+            circle
+            at
+            84%
+            -8%,
+            rgba(
+                149,
+                139,
+                255,
+                .14
+            ),
+            transparent
+            34rem
+        ),
+
+        radial-gradient(
+            circle
+            at
+            10%
+            105%,
+            rgba(
+                94,
+                214,
+                255,
+                .065
+            ),
+            transparent
+            38rem
+        ),
+
+        radial-gradient(
+            circle
+            at
+            60%
+            118%,
+            rgba(
+                197,
+                140,
+                255,
+                .045
+            ),
+            transparent
+            36rem
+        ),
+
+        var(--bg);
+
+}
+
+
+/* ----------------------------------------------------------
+   BRAND MARK
+   ---------------------------------------------------------- */
+
+.brand-mark {
+
+    background:
+
+        linear-gradient(
+            145deg,
+            #bbb5ff,
+            #8176ff
+        );
+
+    box-shadow:
+
+        0
+        8px
+        28px
+        rgba(
+            149,
+            139,
+            255,
+            .22
+        );
+
+}
+
+
+.brand-mark i {
+
+    background:
+        #090a12;
+
+}
+
+
+/* ----------------------------------------------------------
+   FOCUS STATES
+   ---------------------------------------------------------- */
+
+button:focus-visible,
+input:focus-visible,
+select:focus-visible,
+textarea:focus-visible {
+
+    outline-color:
+        rgba(
+            149,
+            139,
+            255,
+            .42
+        );
+
+}
+
+
+/* ----------------------------------------------------------
+   SIDEBAR
+   ---------------------------------------------------------- */
+
+.status-dot {
+
+    background:
+        var(--accent);
+
+    box-shadow:
+
+        0
+        0
+        14px
+        var(--stellar-glow);
+
+}
+
+
+.speed-note {
+
+    background:
+
+        linear-gradient(
+            135deg,
+            rgba(
+                149,
+                139,
+                255,
+                .105
+            ),
+            rgba(
+                94,
+                214,
+                255,
+                .045
+            )
+        );
+
+}
+
+
+.nav-item span {
+
+    color:
+        var(--accent);
+
+}
+
+
+.nav-item.active span {
+
+    color:
+        var(--accent);
+
+    background:
+
+        rgba(
+            149,
+            139,
+            255,
+            .09
+        );
+
+}
+
+
+/* ----------------------------------------------------------
+   BUTTONS
+   ---------------------------------------------------------- */
+
+.button.primary {
+
+    color:
+        #0a0a12;
+
+    background:
+        var(--accent);
+
+    box-shadow:
+
+        0
+        8px
+        28px
+        rgba(
+            149,
+            139,
+            255,
+            .12
+        );
+
+}
+
+
+.button.primary:hover {
+
+    background:
+        var(--accent-strong);
+
+    box-shadow:
+
+        0
+        10px
+        34px
+        rgba(
+            149,
+            139,
+            255,
+            .19
+        );
+
+}
+
+
+.text-button {
+
+    color:
+        var(--accent);
+
+}
+
+
+.pill {
+
+    color:
+        var(--accent);
+
+    border-color:
+
+        rgba(
+            149,
+            139,
+            255,
+            .22
+        );
+
+    background:
+        var(--accent-soft);
+
+}
+
+
+/* ----------------------------------------------------------
+   HERO
+   ---------------------------------------------------------- */
+
+.hero-card {
+
+    background:
+
+        radial-gradient(
+            circle
+            at
+            82%
+            28%,
+            rgba(
+                94,
+                214,
+                255,
+                .10
+            ),
+            transparent
+            34%
+        ),
+
+        radial-gradient(
+            circle
+            at
+            14%
+            14%,
+            rgba(
+                149,
+                139,
+                255,
+                .10
+            ),
+            transparent
+            30%
+        ),
+
+        linear-gradient(
+            145deg,
+            rgba(
+                25,
+                26,
+                39,
+                .94
+            ),
+            rgba(
+                11,
+                12,
+                20,
+                .91
+            )
+        );
+
+}
+
+
+.hero-card::after {
+
+    background:
+
+        rgba(
+            94,
+            214,
+            255,
+            .09
+        );
+
+}
+
+
+/* ----------------------------------------------------------
+   EDITING PREVIEW
+   ---------------------------------------------------------- */
+
+.waveform i {
+
+    background:
+
+        linear-gradient(
+            to top,
+            var(--blue),
+            var(--purple)
+        );
+
+}
+
+
+.preview-cues span {
+
+    color:
+        #e9e6ff;
+
+    background:
+
+        rgba(
+            149,
+            139,
+            255,
+            .15
+        );
+
+}
+
+
+.playhead {
+
+    background:
+        var(--accent);
+
+    box-shadow:
+
+        0
+        0
+        16px
+        var(--stellar-glow);
+
+}
+
+
+/* ----------------------------------------------------------
+   MODULES
+   ---------------------------------------------------------- */
+
+.module-icon {
+
+    color:
+        var(--accent);
+
+    background:
+
+        rgba(
+            149,
+            139,
+            255,
+            .08
+        );
+
+}
+
+
+.module-card li::before {
+
+    color:
+        var(--accent);
+
+}
+
+
+/* ----------------------------------------------------------
+   FORM SELECTIONS
+   ---------------------------------------------------------- */
+
+.field input:focus,
+.field select:focus,
+.field textarea:focus {
+
+    border-color:
+
+        rgba(
+            149,
+            139,
+            255,
+            .42
+        );
+
+    box-shadow:
+
+        0
+        0
+        0
+        3px
+        rgba(
+            149,
+            139,
+            255,
+            .075
+        );
+
+}
+
+
+.choice-pills input:checked + span,
+.segmented input:checked + span,
+.check-grid input:checked + span {
+
+    color:
+        #090a12;
+
+    border-color:
+        var(--accent);
+
+    background:
+        var(--accent);
+
+}
+
+
+/* ----------------------------------------------------------
+   GUIDANCE / INSIGHT
+   ---------------------------------------------------------- */
+
+.insight {
+
+    background:
+        var(--accent-soft);
+
+}
+
+
+.insight > span {
+
+    color:
+        #090a12;
+
+    background:
+        var(--accent);
+
+}
+
+
+/* ----------------------------------------------------------
+   NOVA JOURNEY
+   ---------------------------------------------------------- */
+
+.nova-step.active > span {
+
+    color:
+        #090a12;
+
+    border-color:
+        var(--accent);
+
+    background:
+        var(--accent);
+
+    box-shadow:
+
+        0
+        0
+        0
+        4px
+        rgba(
+            149,
+            139,
+            255,
+            .09
+        );
+
+}
+
+
+/* ----------------------------------------------------------
+   NOVA RECOMMENDATIONS
+   ---------------------------------------------------------- */
+
+.match-badge {
+
+    color:
+        #090a12;
+
+    background:
+        var(--nova);
+
+}
+
+
+.fit-reasons li::before {
+
+    color:
+        var(--nova);
+
+}
+
+
+.song-source-link:hover {
+
+    color:
+        var(--nova);
+
+}
+
+
+/* ----------------------------------------------------------
+   SELECTED TRACK
+   ---------------------------------------------------------- */
+
+.selected-track {
+
+    border-color:
+
+        rgba(
+            149,
+            139,
+            255,
+            .18
+        );
+
+    background:
+
+        rgba(
+            149,
+            139,
+            255,
+            .10
+        );
+
+}
+
+
+.selected-track small {
+
+    color:
+        var(--accent);
+
+}
+
+
+/* ----------------------------------------------------------
+   PULSAR PRIORITY COLORS
+   ---------------------------------------------------------- */
+
+.primary-dot {
+
+    background:
+        var(--accent);
+
+}
+
+
+.secondary-dot {
+
+    background:
+        var(--blue);
+
+}
+
+
+.optional-dot {
+
+    background:
+        var(--purple);
+
+}
+
+
+.priority-chip.primary {
+
+    color:
+        #090a12;
+
+    background:
+        var(--accent);
+
+}
+
+
+.priority-chip.secondary {
+
+    color:
+        #e2f8ff;
+
+    background:
+
+        rgba(
+            94,
+            214,
+            255,
+            .17
+        );
+
+}
+
+
+.priority-chip.optional {
+
+    color:
+        #f0e4ff;
+
+    background:
+
+        rgba(
+            197,
+            140,
+            255,
+            .17
+        );
+
+}
+
+
+/* ----------------------------------------------------------
+   NOVA / PULSAR SHOWCASE CARDS
+   ---------------------------------------------------------- */
+
+.nova-jewel
+.jewel-visual {
+
+    background:
+
+        radial-gradient(
+            circle
+            at
+            50%
+            42%,
+            rgba(
+                183,
+                140,
+                255,
+                .10
+            ),
+            transparent
+            52%
+        );
+
+}
+
+
+.pulsar-jewel
+.jewel-visual {
+
+    background:
+
+        radial-gradient(
+            circle
+            at
+            50%
+            42%,
+            rgba(
+                94,
+                214,
+                255,
+                .085
+            ),
+            transparent
+            52%
+        );
+
+}
+
+
+/* ----------------------------------------------------------
+   NOVA MINI CARDS
+   ---------------------------------------------------------- */
+
+.mini-track i,
+.nova-visual-card span {
+
+    background:
+
+        radial-gradient(
+            circle
+            at
+            30%
+            24%,
+            rgba(
+                255,
+                255,
+                255,
+                .16
+            ),
+            transparent
+            24%
+        ),
+
+        linear-gradient(
+            145deg,
+            rgba(
+                94,
+                214,
+                255,
+                .46
+            ),
+            rgba(
+                183,
+                140,
+                255,
+                .46
+            )
+        );
+
+}
+
+
+.mini-track.selected {
+
+    border-color:
+
+        rgba(
+            183,
+            140,
+            255,
+            .46
+        );
+
+    background:
+
+        rgba(
+            183,
+            140,
+            255,
+            .065
+        );
+
+}
+
+
+.mini-track.selected span {
+
+    background:
+        var(--nova);
+
+}
+
+
+/* ----------------------------------------------------------
+   NOVA INTRO
+   ---------------------------------------------------------- */
+
+.nova-intro {
+
+    background:
+
+        radial-gradient(
+            circle
+            at
+            82%
+            20%,
+            rgba(
+                183,
+                140,
+                255,
+                .09
+            ),
+            transparent
+            30%
+        ),
+
+        radial-gradient(
+            circle
+            at
+            12%
+            92%,
+            rgba(
+                94,
+                214,
+                255,
+                .045
+            ),
+            transparent
+            34%
+        ),
+
+        linear-gradient(
+            145deg,
+            rgba(
+                25,
+                25,
+                39,
+                .84
+            ),
+            rgba(
+                12,
+                13,
+                20,
+                .84
+            )
+        );
+
+}
+
+
+.nova-orbit {
+
+    border-color:
+
+        rgba(
+            183,
+            140,
+            255,
+            .14
+        );
+
+}
+
+
+.nova-visual-card-two.active {
+
+    border-color:
+
+        rgba(
+            183,
+            140,
+            255,
+            .50
+        );
+
+    background:
+
+        rgba(
+            30,
+            25,
+            43,
+            .91
+        );
+
+    box-shadow:
+
+        0
+        30px
+        80px
+        rgba(
+            0,
+            0,
+            0,
+            .3
+        ),
+
+        0
+        0
+        0
+        1px
+        rgba(
+            183,
+            140,
+            255,
+            .10
+        );
+
+}
+
+
+.nova-visual-card-two.active strong {
+
+    color:
+        var(--nova);
+
+}
+
+
+/* ----------------------------------------------------------
+   PULSAR INTRO
+   ---------------------------------------------------------- */
+
+.pulsar-intro {
+
+    background:
+
+        radial-gradient(
+            circle
+            at
+            82%
+            20%,
+            rgba(
+                94,
+                214,
+                255,
+                .09
+            ),
+            transparent
+            30%
+        ),
+
+        radial-gradient(
+            circle
+            at
+            12%
+            92%,
+            rgba(
+                149,
+                139,
+                255,
+                .05
+            ),
+            transparent
+            34%
+        ),
+
+        linear-gradient(
+            145deg,
+            rgba(
+                21,
+                27,
+                38,
+                .84
+            ),
+            rgba(
+                11,
+                13,
+                20,
+                .84
+            )
+        );
+
+}
+
+
+.mini-wave i,
+.pulsar-demo-wave i {
+
+    background:
+
+        linear-gradient(
+            to top,
+            var(--pulsar),
+            var(--accent)
+        );
+
+}
+
+
+.mini-signal-line span,
+.pulsar-demo-line .primary {
+
+    background:
+        var(--pulsar);
+
+    box-shadow:
+
+        0
+        0
+        0
+        5px
+        rgba(
+            94,
+            214,
+            255,
+            .07
+        );
+
+}
+
+
+.pulsar-demo-line .secondary {
+
+    background:
+        var(--accent);
+
+    box-shadow:
+
+        0
+        0
+        0
+        1px
+        var(--accent);
+
+}
+
+
+/* ----------------------------------------------------------
+   SIGNAL TIMELINE
+   ---------------------------------------------------------- */
+
+.visual-timeline::before {
+
+    background:
+
+        linear-gradient(
+            to right,
+            var(--pulsar),
+            var(--purple),
+            var(--accent)
+        );
+
+}
+
+
+/* ----------------------------------------------------------
+   MODAL HIGHLIGHTS
+   ---------------------------------------------------------- */
+
+.modal-icon {
+
+    color:
+        #090a12;
+
+    background:
+        var(--accent);
+
+}
+
+
+/* ----------------------------------------------------------
+   AUTH SUCCESS
+   ---------------------------------------------------------- */
+
+.auth-message.success {
+
+    color:
+        #dcd8ff;
+
+}
+
+
+/* ----------------------------------------------------------
+   TOAST
+   ---------------------------------------------------------- */
+
+.toast {
+
+    color:
+        #edeaff;
+
+    border-color:
+
+        rgba(
+            149,
+            139,
+            255,
+            .18
+        );
+
+    background:
+
+        rgba(
+            28,
+            24,
+            47,
+            .90
+        );
+
+}
+
+
+/* ----------------------------------------------------------
+   LOADING / ERROR POLISH
+   ---------------------------------------------------------- */
+
+.nova-loading-art::after,
+.nova-loading-line::after,
+.nova-loading-block::after {
+
+    background:
+
+        linear-gradient(
+            90deg,
+            transparent,
+            rgba(
+                149,
+                139,
+                255,
+                .09
+            ),
+            transparent
+        );
+
+}
+
+
+/* ----------------------------------------------------------
+   HIGH CONTRAST
+   ---------------------------------------------------------- */
+
+@media (
+    prefers-contrast:
+    more
+) {
+
+    :root {
+
+        --border:
+
+            rgba(
+                190,
+                195,
+                255,
+                .28
+            );
+
+    }
+
+}
