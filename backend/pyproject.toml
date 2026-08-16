@@ -7,4 +7,5 @@ dependencies = [
     "httpx>=0.28.1",
     "openai>=2.54.0",
     "python-dotenv>=1.2.2",
+    "ytmusicapi>=1.12.2",
 ]
