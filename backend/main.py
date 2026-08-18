@@ -212,7 +212,31 @@ print('==========================================')
 if not LASTFM_API_KEY:
     raise RuntimeError(f'LASTFM_API_KEY could not be read from {ENV_PATH}')
 app = FastAPI(title='Syncora Backend', version='0.7.5')
-app.add_middleware(CORSMiddleware, allow_origins=['http://localhost:3000', 'http://127.0.0.1:3000'], allow_credentials=True, allow_methods=['*'], allow_headers=['*'])
+
+
+ALLOWED_ORIGINS = [
+    origin.strip().rstrip('/')
+
+    for origin
+    in get_setting(
+        'ALLOWED_ORIGINS',
+        (
+            'http://localhost:3000,'
+            'http://127.0.0.1:3000'
+        ),
+    ).split(',')
+
+    if origin.strip()
+]
+
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=ALLOWED_ORIGINS,
+    allow_credentials=True,
+    allow_methods=['*'],
+    allow_headers=['*'],
+)
+
 
 @app.exception_handler(RequestValidationError)
 async def validation_exception_handler(request: Request, exc: RequestValidationError):
