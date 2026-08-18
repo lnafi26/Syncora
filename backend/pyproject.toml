@@ -5,7 +5,10 @@ requires-python = ">=3.12"
 dependencies = [
     "fastapi[standard]>=0.141.1",
     "httpx>=0.28.1",
+    "huggingface-hub>=1.27.0",
+    "numpy>=2.5.2",
     "openai>=2.54.0",
     "python-dotenv>=1.2.2",
+    "supabase>=2.31.0",
     "ytmusicapi>=1.12.2",
 ]

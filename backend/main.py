@@ -1,3 +1,4 @@
+import os
 from pathlib import Path
 import asyncio
 import hashlib
@@ -15,20 +16,190 @@ from fastapi.responses import JSONResponse
 from openai import OpenAI
 from pydantic import BaseModel, Field
 from ytmusicapi import YTMusic
-BUILD_ID = 'nova-hybrid-0.7.5'
-QWEN_MODEL_ID = 'nova-qwen'
-EMBEDDING_MODEL_ID = 'nova-embed'
-PULSAR_RESOLVER_BUILD_ID = 'pulsar-ytmusic-resolver-0.2.0'
-PULSAR_ANALYSIS_BUILD_ID = 'pulsar-signal-0.5.1'
+from huggingface_hub import InferenceClient
+from datetime import datetime, timezone
+from supabase import create_client
+
 BACKEND_DIR = Path(__file__).resolve().parent
 ENV_PATH = BACKEND_DIR / '.env'
+
 config = dotenv_values(ENV_PATH)
-LASTFM_API_KEY = config.get('LASTFM_API_KEY')
-LASTFM_SHARED_SECRET = config.get('LASTFM_SHARED_SECRET')
-LASTFM_API_URL = 'https://ws.audioscrobbler.com/2.0/'
-CYANITE_ACCESS_TOKEN = config.get('CYANITE_ACCESS_TOKEN')
-CYANITE_WEBHOOK_SECRET = config.get('CYANITE_WEBHOOK_SECRET')
-CYANITE_API_URL = config.get('CYANITE_API_URL') or 'https://api.cyanite.ai/graphql'
+
+def get_setting(name, default=None):
+    environment_value = os.environ.get(name)
+
+    if (
+        environment_value is not None
+        and str(environment_value).strip()
+    ):
+        return environment_value
+
+    env_file_value = config.get(name)
+
+    if (
+        env_file_value is not None
+        and str(env_file_value).strip()
+    ):
+        return env_file_value
+
+    return default
+
+
+BUILD_ID = 'nova-hybrid-0.7.5'
+PULSAR_RESOLVER_BUILD_ID = 'pulsar-ytmusic-resolver-0.2.0'
+PULSAR_ANALYSIS_BUILD_ID = 'pulsar-signal-0.5.1'
+
+LLM_PROVIDER = (
+    get_setting(
+        'LLM_PROVIDER',
+        'local',
+    )
+    .strip()
+    .casefold()
+)
+
+EMBEDDING_PROVIDER = (
+    get_setting(
+        'EMBEDDING_PROVIDER',
+        'local',
+    )
+    .strip()
+    .casefold()
+)
+
+HF_TOKEN = get_setting(
+    'HF_TOKEN'
+)
+
+HF_ROUTER_BASE_URL = get_setting(
+    'HF_ROUTER_BASE_URL',
+    'https://router.huggingface.co/v1',
+)
+
+HF_EMBEDDING_INFERENCE_PROVIDER = get_setting(
+    'HF_EMBEDDING_INFERENCE_PROVIDER',
+    'scaleway',
+)
+
+LOCAL_AI_BASE_URL = get_setting(
+    'LOCAL_AI_BASE_URL',
+    'http://localhost:1234/v1',
+)
+
+LOCAL_AI_API_KEY = get_setting(
+    'LOCAL_AI_API_KEY',
+    'lm-studio',
+)
+
+QWEN_MODEL_ID = get_setting(
+    'QWEN_MODEL_ID',
+    (
+        'Qwen/Qwen3.6-35B-A3B:cheapest'
+        if LLM_PROVIDER == 'huggingface'
+        else
+        'nova-qwen'
+    ),
+)
+
+EMBEDDING_MODEL_ID = get_setting(
+    'EMBEDDING_MODEL_ID',
+    (
+        'Qwen/Qwen3-Embedding-8B'
+        if EMBEDDING_PROVIDER == 'huggingface'
+        else
+        'nova-embed'
+    ),
+)
+
+if LLM_PROVIDER not in {
+    'local',
+    'huggingface',
+}:
+    raise RuntimeError(
+        f'Unsupported LLM_PROVIDER: {LLM_PROVIDER}'
+    )
+
+if EMBEDDING_PROVIDER not in {
+    'local',
+    'huggingface',
+}:
+    raise RuntimeError(
+        'Unsupported EMBEDDING_PROVIDER: '
+        f'{EMBEDDING_PROVIDER}'
+    )
+
+if (
+    (
+        LLM_PROVIDER == 'huggingface'
+        or
+        EMBEDDING_PROVIDER == 'huggingface'
+    )
+    and
+    not HF_TOKEN
+):
+    raise RuntimeError(
+        'HF_TOKEN is required when using '
+        'Hugging Face inference.'
+    )
+
+LASTFM_API_KEY = get_setting(
+    'LASTFM_API_KEY'
+)
+
+LASTFM_SHARED_SECRET = get_setting(
+    'LASTFM_SHARED_SECRET'
+)
+
+LASTFM_API_URL = (
+    'https://ws.audioscrobbler.com/2.0/'
+)
+
+CYANITE_ACCESS_TOKEN = get_setting(
+    'CYANITE_ACCESS_TOKEN'
+)
+
+CYANITE_WEBHOOK_SECRET = get_setting(
+    'CYANITE_WEBHOOK_SECRET'
+)
+
+CYANITE_API_URL = get_setting(
+    'CYANITE_API_URL',
+    'https://api.cyanite.ai/graphql',
+)
+
+SUPABASE_URL = get_setting(
+    'SUPABASE_URL'
+)
+
+SUPABASE_SECRET_KEY = (
+    get_setting(
+        'SUPABASE_SECRET_KEY'
+    )
+    or
+    get_setting(
+        'SUPABASE_SERVICE_ROLE_KEY'
+    )
+)
+
+if not SUPABASE_URL:
+    raise RuntimeError(
+        'SUPABASE_URL was not found.'
+    )
+
+if not SUPABASE_SECRET_KEY:
+    raise RuntimeError(
+        'SUPABASE_SECRET_KEY was not found.'
+    )
+
+supabase_cache_client = create_client(
+    SUPABASE_URL,
+    SUPABASE_SECRET_KEY,
+)
+
+PULSAR_CACHE_TABLE = (
+    'pulsar_analysis_cache'
+)
+
 print('==========================================')
 print('Syncora backend build:', BUILD_ID)
 print('Nova Qwen model:', QWEN_MODEL_ID)
@@ -77,7 +248,134 @@ async def unhandled_exception_handler(request: Request, exc: Exception):
             }
         },
     )
-client = OpenAI(base_url='http://localhost:1234/v1', api_key='lm-studio', timeout=180.0, max_retries=0)
+
+local_ai_client = None
+
+if (
+    LLM_PROVIDER == 'local'
+    or
+    EMBEDDING_PROVIDER == 'local'
+):
+    local_ai_client = OpenAI(
+        base_url=LOCAL_AI_BASE_URL,
+        api_key=LOCAL_AI_API_KEY,
+        timeout=180.0,
+        max_retries=0,
+    )
+
+
+if LLM_PROVIDER == 'huggingface':
+    llm_client = OpenAI(
+        base_url=HF_ROUTER_BASE_URL,
+        api_key=HF_TOKEN,
+        timeout=180.0,
+        max_retries=0,
+    )
+
+else:
+    llm_client = local_ai_client
+
+
+embedding_client = None
+
+if EMBEDDING_PROVIDER == 'huggingface':
+    embedding_client = InferenceClient(
+        provider=HF_EMBEDDING_INFERENCE_PROVIDER,
+        api_key=HF_TOKEN,
+    )
+
+
+def create_llm_completion(**kwargs):
+    if LLM_PROVIDER == 'huggingface':
+        kwargs[
+            'reasoning_effort'
+        ] = 'none'
+
+    return (
+        llm_client
+        .chat
+        .completions
+        .create(
+            **kwargs
+        )
+    )
+
+
+def create_embedding_vectors(texts):
+    if not isinstance(texts, list) or not texts:
+        raise ValueError(
+            'Embedding input must be a non-empty list.'
+        )
+
+    if EMBEDDING_PROVIDER == 'huggingface':
+        result = (
+            embedding_client
+            .feature_extraction(
+                texts,
+                model=EMBEDDING_MODEL_ID,
+            )
+        )
+
+        if hasattr(
+            result,
+            'tolist'
+        ):
+            result = result.tolist()
+
+        if (
+            len(texts) == 1
+            and isinstance(result, list)
+            and result
+            and isinstance(
+                result[0],
+                (int, float)
+            )
+        ):
+            result = [
+                result
+            ]
+
+        if (
+            not isinstance(result, list)
+            or
+            len(result) != len(texts)
+        ):
+            raise ValueError(
+                'Hugging Face returned an unexpected '
+                'embedding vector count.'
+            )
+
+        return result
+
+    response = (
+        local_ai_client
+        .embeddings
+        .create(
+            model=EMBEDDING_MODEL_ID,
+            input=texts,
+        )
+    )
+
+    ordered_data = sorted(
+        response.data,
+        key=lambda item:
+            item.index
+    )
+
+    vectors = [
+        item.embedding
+        for item in ordered_data
+    ]
+
+    if len(vectors) != len(texts):
+        raise ValueError(
+            'Local embedding model returned an '
+            'unexpected vector count.'
+        )
+
+    return vectors
+
+
 ytmusic = YTMusic()
 
 class NovaRequest(BaseModel):
@@ -127,11 +425,19 @@ def create_empty_pulsar_cache():
             PULSAR_CACHE_VERSION,
 
         'tracks':
-            {}
+            {},
     }
 
 
 def load_pulsar_analysis_cache():
+    """
+    Load the old local JSON cache.
+
+    This remains temporarily during the Supabase
+    migration so previously-paid Cyanite analyses
+    are never lost.
+    """
+
     if not PULSAR_CACHE_PATH.exists():
         return (
             create_empty_pulsar_cache()
@@ -146,10 +452,10 @@ def load_pulsar_analysis_cache():
 
     except (
         OSError,
-        ValueError
+        ValueError,
     ) as error:
         print(
-            '[PULSAR CACHE] '
+            '[PULSAR LOCAL CACHE] '
             'Could not load cache: '
             f'{error}'
         )
@@ -160,7 +466,7 @@ def load_pulsar_analysis_cache():
 
     if not isinstance(
         data,
-        dict
+        dict,
     ):
         return (
             create_empty_pulsar_cache()
@@ -172,7 +478,7 @@ def load_pulsar_analysis_cache():
 
     if not isinstance(
         tracks,
-        dict
+        dict,
     ):
         return (
             create_empty_pulsar_cache()
@@ -191,25 +497,34 @@ pulsar_analysis_cache = (
 
 
 def persist_pulsar_analysis_cache():
+    """
+    Temporary local fallback writer.
+
+    Supabase is now the primary persistent cache,
+    but we keep the local copy during migration.
+    """
+
     with pulsar_cache_lock:
         try:
             PULSAR_CACHE_DIR.mkdir(
                 parents=True,
-                exist_ok=True
+                exist_ok=True,
             )
 
             temporary_path = (
                 PULSAR_CACHE_PATH
-                .with_suffix('.tmp')
+                .with_suffix(
+                    '.tmp'
+                )
             )
 
             temporary_path.write_text(
                 json.dumps(
                     pulsar_analysis_cache,
                     ensure_ascii=False,
-                    indent=2
+                    indent=2,
                 ),
-                encoding='utf-8'
+                encoding='utf-8',
             )
 
             temporary_path.replace(
@@ -219,17 +534,335 @@ def persist_pulsar_analysis_cache():
             return True
 
         except OSError as error:
-            # Keep the in-memory cache alive even if the disk write fails.
-            # A cache failure must never abort a successful paid analysis.
             print(
-                '[PULSAR CACHE WRITE ERROR] '
+                '[PULSAR LOCAL CACHE WRITE ERROR] '
                 f'{type(error).__name__}: {error}'
             )
 
             return False
 
 
-def get_cached_pulsar_track_by_video_id(
+def get_pulsar_cache_primary_artist(
+    track
+):
+    if not isinstance(
+        track,
+        dict,
+    ):
+        return None
+
+    artists = track.get(
+        'artists'
+    )
+
+    if isinstance(
+        artists,
+        str,
+    ):
+        return (
+            artists.strip()
+            or None
+        )
+
+    if isinstance(
+        artists,
+        list,
+    ):
+        for artist in artists:
+            if (
+                isinstance(
+                    artist,
+                    str,
+                )
+                and
+                artist.strip()
+            ):
+                return (
+                    artist.strip()
+                )
+
+    return None
+
+
+def clean_pulsar_cache_payload(
+    entry
+):
+    if not isinstance(
+        entry,
+        dict,
+    ):
+        return {}
+
+    return {
+        key:
+            value
+
+        for (
+            key,
+            value
+        )
+        in entry.items()
+
+        if not str(
+            key
+        ).startswith(
+            '_'
+        )
+    }
+
+
+def build_supabase_pulsar_cache_row(
+    video_id,
+    entry
+):
+    clean_entry = (
+        clean_pulsar_cache_payload(
+            entry
+        )
+    )
+
+    track = (
+        clean_entry.get(
+            'track'
+        )
+        or
+        {}
+    )
+
+    return {
+        'video_id':
+            str(
+                video_id
+            ),
+
+        'library_track_id':
+            (
+                str(
+                    clean_entry.get(
+                        'library_track_id'
+                    )
+                )
+                if clean_entry.get(
+                    'library_track_id'
+                )
+                else None
+            ),
+
+        'title':
+            track.get(
+                'title'
+            ),
+
+        'artist':
+            get_pulsar_cache_primary_artist(
+                track
+            ),
+
+        'payload':
+            clean_entry,
+
+        'analysis_provider':
+            'cyanite',
+
+        'updated_at':
+            datetime.now(
+                timezone.utc
+            ).isoformat(),
+    }
+
+
+def write_pulsar_cache_to_supabase(
+    video_id,
+    entry
+):
+    if (
+        not video_id
+        or
+        not isinstance(
+            entry,
+            dict,
+        )
+    ):
+        return False
+
+    row = (
+        build_supabase_pulsar_cache_row(
+            video_id,
+            entry,
+        )
+    )
+
+    try:
+        (
+            supabase_cache_client
+            .table(
+                PULSAR_CACHE_TABLE
+            )
+            .upsert(
+                row,
+                on_conflict='video_id',
+            )
+            .execute()
+        )
+
+        return True
+
+    except Exception as error:
+        print(
+            '[PULSAR SUPABASE CACHE WRITE ERROR] '
+            f'{type(error).__name__}: {error}'
+        )
+
+        return False
+
+
+def parse_supabase_pulsar_cache_row(
+    row
+):
+    if not isinstance(
+        row,
+        dict,
+    ):
+        return None
+
+    payload = row.get(
+        'payload'
+    )
+
+    if not isinstance(
+        payload,
+        dict,
+    ):
+        return None
+
+    result = dict(
+        payload
+    )
+
+    result[
+        'video_id'
+    ] = str(
+        row.get(
+            'video_id'
+        )
+        or
+        result.get(
+            'video_id'
+        )
+        or
+        ''
+    )
+
+    result[
+        '_cache_source'
+    ] = 'supabase'
+
+    return result
+
+
+def get_supabase_pulsar_track_by_video_id(
+    video_id
+):
+    if not video_id:
+        return None
+
+    try:
+        response = (
+            supabase_cache_client
+            .table(
+                PULSAR_CACHE_TABLE
+            )
+            .select(
+                'video_id,library_track_id,payload'
+            )
+            .eq(
+                'video_id',
+                str(
+                    video_id
+                ),
+            )
+            .execute()
+        )
+
+    except Exception as error:
+        print(
+            '[PULSAR SUPABASE CACHE READ ERROR] '
+            f'{type(error).__name__}: {error}'
+        )
+
+        return None
+
+    rows = (
+        response.data
+        if isinstance(
+            response.data,
+            list,
+        )
+        else []
+    )
+
+    if not rows:
+        return None
+
+    return (
+        parse_supabase_pulsar_cache_row(
+            rows[0]
+        )
+    )
+
+
+def get_supabase_pulsar_track_by_library_id(
+    library_track_id
+):
+    if not library_track_id:
+        return None
+
+    try:
+        response = (
+            supabase_cache_client
+            .table(
+                PULSAR_CACHE_TABLE
+            )
+            .select(
+                'video_id,library_track_id,payload'
+            )
+            .eq(
+                'library_track_id',
+                str(
+                    library_track_id
+                ),
+            )
+            .execute()
+        )
+
+    except Exception as error:
+        print(
+            '[PULSAR SUPABASE CACHE READ ERROR] '
+            f'{type(error).__name__}: {error}'
+        )
+
+        return None
+
+    rows = (
+        response.data
+        if isinstance(
+            response.data,
+            list,
+        )
+        else []
+    )
+
+    if not rows:
+        return None
+
+    return (
+        parse_supabase_pulsar_cache_row(
+            rows[0]
+        )
+    )
+
+
+def get_local_pulsar_track_by_video_id(
     video_id
 ):
     if not video_id:
@@ -240,23 +873,39 @@ def get_cached_pulsar_track_by_video_id(
             pulsar_analysis_cache
             .get(
                 'tracks',
-                {}
+                {},
             )
             .get(
-                str(video_id)
+                str(
+                    video_id
+                )
             )
         )
 
         if not isinstance(
             entry,
-            dict
+            dict,
         ):
             return None
 
-        return dict(entry)
+        result = dict(
+            entry
+        )
+
+        result[
+            'video_id'
+        ] = str(
+            video_id
+        )
+
+        result[
+            '_cache_source'
+        ] = 'local_disk'
+
+        return result
 
 
-def get_cached_pulsar_track_by_library_id(
+def get_local_pulsar_track_by_library_id(
     library_track_id
 ):
     if not library_track_id:
@@ -271,17 +920,17 @@ def get_cached_pulsar_track_by_library_id(
             pulsar_analysis_cache
             .get(
                 'tracks',
-                {}
+                {},
             )
         )
 
         for (
             video_id,
-            entry
+            entry,
         ) in tracks.items():
             if not isinstance(
                 entry,
-                dict
+                dict,
             ):
                 continue
 
@@ -308,17 +957,69 @@ def get_cached_pulsar_track_by_library_id(
 
             result[
                 'video_id'
-            ] = video_id
+            ] = str(
+                video_id
+            )
+
+            result[
+                '_cache_source'
+            ] = 'local_disk'
 
             return result
 
     return None
 
 
+def get_cached_pulsar_track_by_video_id(
+    video_id
+):
+    """
+    Supabase first, old local JSON second.
+    """
+
+    cached_entry = (
+        get_supabase_pulsar_track_by_video_id(
+            video_id
+        )
+    )
+
+    if cached_entry:
+        return cached_entry
+
+    return (
+        get_local_pulsar_track_by_video_id(
+            video_id
+        )
+    )
+
+
+def get_cached_pulsar_track_by_library_id(
+    library_track_id
+):
+    """
+    Supabase first, old local JSON second.
+    """
+
+    cached_entry = (
+        get_supabase_pulsar_track_by_library_id(
+            library_track_id
+        )
+    )
+
+    if cached_entry:
+        return cached_entry
+
+    return (
+        get_local_pulsar_track_by_library_id(
+            library_track_id
+        )
+    )
+
+
 def cache_pulsar_resolution(
     video_id,
     library_track_id,
-    track
+    track,
 ):
     if (
         not video_id
@@ -327,18 +1028,22 @@ def cache_pulsar_resolution(
     ):
         return
 
+    video_id = str(
+        video_id
+    )
+
     with pulsar_cache_lock:
         tracks = (
             pulsar_analysis_cache
             .setdefault(
                 'tracks',
-                {}
+                {},
             )
         )
 
         entry = tracks.setdefault(
-            str(video_id),
-            {}
+            video_id,
+            {},
         )
 
         entry[
@@ -350,26 +1055,36 @@ def cache_pulsar_resolution(
         entry[
             'track'
         ] = (
-            dict(track)
+            dict(
+                track
+            )
             if isinstance(
                 track,
-                dict
+                dict,
             )
-            else
-            {}
+            else {}
         )
 
         entry[
             'updated_at'
         ] = time.time()
 
+        snapshot = dict(
+            entry
+        )
+
         persist_pulsar_analysis_cache()
+
+    write_pulsar_cache_to_supabase(
+        video_id,
+        snapshot,
+    )
 
 
 def cache_pulsar_finished_analysis(
     library_track_id,
     analysis=None,
-    segments_response=None
+    segments_response=None,
 ):
     cached_entry = (
         get_cached_pulsar_track_by_library_id(
@@ -389,16 +1104,40 @@ def cache_pulsar_finished_analysis(
     if not video_id:
         return
 
+    video_id = str(
+        video_id
+    )
+
     with pulsar_cache_lock:
-        entry = (
-            pulsar_analysis_cache[
-                'tracks'
-            ][video_id]
+        tracks = (
+            pulsar_analysis_cache
+            .setdefault(
+                'tracks',
+                {},
+            )
         )
+
+        entry = tracks.setdefault(
+            video_id,
+            clean_pulsar_cache_payload(
+                cached_entry
+            ),
+        )
+
+        if (
+            not entry.get(
+                'library_track_id'
+            )
+        ):
+            entry[
+                'library_track_id'
+            ] = str(
+                library_track_id
+            )
 
         if isinstance(
             analysis,
-            dict
+            dict,
         ):
             existing_analysis = (
                 entry.get(
@@ -408,13 +1147,13 @@ def cache_pulsar_finished_analysis(
 
             if not isinstance(
                 existing_analysis,
-                dict
+                dict,
             ):
                 existing_analysis = {}
 
             for (
                 key,
-                value
+                value,
             ) in analysis.items():
                 if (
                     value is not None
@@ -431,7 +1170,7 @@ def cache_pulsar_finished_analysis(
 
         if isinstance(
             segments_response,
-            dict
+            dict,
         ):
             entry[
                 'segments_response'
@@ -443,7 +1182,77 @@ def cache_pulsar_finished_analysis(
             'updated_at'
         ] = time.time()
 
+        snapshot = dict(
+            entry
+        )
+
         persist_pulsar_analysis_cache()
+
+    write_pulsar_cache_to_supabase(
+        video_id,
+        snapshot,
+    )
+
+
+def migrate_local_pulsar_cache_to_supabase():
+    """
+    One-time migration helper.
+
+    Copies existing local JSON cache entries into
+    Supabase without contacting Cyanite.
+    """
+
+    with pulsar_cache_lock:
+        tracks = dict(
+            pulsar_analysis_cache.get(
+                'tracks',
+                {},
+            )
+        )
+
+    migrated = 0
+    failed = 0
+    skipped = 0
+
+    for (
+        video_id,
+        entry,
+    ) in tracks.items():
+        if not isinstance(
+            entry,
+            dict,
+        ):
+            skipped += 1
+            continue
+
+        success = (
+            write_pulsar_cache_to_supabase(
+                video_id,
+                entry,
+            )
+        )
+
+        if success:
+            migrated += 1
+
+        else:
+            failed += 1
+
+    return {
+        'total_local_entries':
+            len(
+                tracks
+            ),
+
+        'migrated':
+            migrated,
+
+        'failed':
+            failed,
+
+        'skipped':
+            skipped,
+    }
 
 def get_payload_cache_key(payload: NovaRequest):
     serialized = json.dumps(payload.model_dump(), sort_keys=True, ensure_ascii=False)
@@ -641,9 +1450,32 @@ def create_pulsar_signal_with_qwen(title, analysis, keypoints, editing_context, 
 - If editing_context contains no timing instructions,
   never interpret that as a request to begin at 0:00 or
   use the entire song.
-- Base suggestions on the actual changes provided.\n- Editing suggestions may include cuts, transitions,\n  speed changes, visual emphasis, shot changes,\n  motion changes, overlays, or similar editing ideas.\n- Suggestions should be practical rather than flowery.\n- Different cues should not all recommend the same edit.\n- If the evidence is subtle, say so rather than\n  exaggerating it.\n- Do not mention Cyanite, Qwen, Python, APIs, models,\n  classifiers, or internal scoring to the user.\n- Return valid JSON only.\n- Do not use Markdown.\n- Do not use code fences.\n\n\nReturn exactly this structure:\n\n{{\n    "signal_summary":\n        "One concise sentence describing how the track develops for editing.",\n\n    "cues": [\n        {{\n            "timestamp_seconds": 0,\n            "title":\n                "Short editor-facing cue title",\n            "suggestion":\n                "One or two concise sentences describing an editing opportunity.",\n            "evidence":\n                "A concise plain-language description of the musical change supporting the suggestion."\n        }}\n    ]\n}}\n\n\nOBJECTIVE PULSAR DATA\n\n{json.dumps(objective_payload, ensure_ascii=False, indent=2)}\n"""
+- Base suggestions on the actual changes provided.
+- - change_score measures the relative magnitude or
+  salience of a transition within the selected edit
+  window. It does NOT measure energy, loudness,
+  intensity, arousal, or whether the song is at a peak.
+- Never describe a high change_score as "peak energy",
+  "maximum energy", "highest intensity", or similar.
+- Use signed_change.arousal when describing the
+  direction of an energy/arousal change:
+  positive means arousal increased,
+  negative means arousal decreased.
+- Use signed_change.valence only to describe the
+  direction of a valence change:
+  positive means valence increased,
+  negative means valence decreased.
+- component_change values describe the magnitude of
+  change in each category, not its direction.
+  Never infer "increased" or "decreased" from a
+  component_change value alone.
+- dominant_transitions describe classifier prominence
+  changes. They do not establish overall energy level.
+- Do not claim that a timestamp is an absolute musical
+  peak unless the supplied objective data explicitly
+  establishes that fact.\n- Editing suggestions may include cuts, transitions,\n  speed changes, visual emphasis, shot changes,\n  motion changes, overlays, or similar editing ideas.\n- Suggestions should be practical rather than flowery.\n- Different cues should not all recommend the same edit.\n- If the evidence is subtle, say so rather than\n  exaggerating it.\n- Do not mention Cyanite, Qwen, Python, APIs, models,\n  classifiers, or internal scoring to the user.\n- Return valid JSON only.\n- Do not use Markdown.\n- Do not use code fences.\n\n\nReturn exactly this structure:\n\n{{\n    "signal_summary":\n        "One concise sentence describing how the track develops for editing.",\n\n    "cues": [\n        {{\n            "timestamp_seconds": 0,\n            "title":\n                "Short editor-facing cue title",\n            "suggestion":\n                "One or two concise sentences describing an editing opportunity.",\n            "evidence":\n                "A concise plain-language description of the musical change supporting the suggestion."\n        }}\n    ]\n}}\n\n\nOBJECTIVE PULSAR DATA\n\n{json.dumps(objective_payload, ensure_ascii=False, indent=2)}\n"""
     try:
-        completion = client.chat.completions.create(model=QWEN_MODEL_ID,     messages=[
+        completion = create_llm_completion(model=QWEN_MODEL_ID,     messages=[
         {
             'role': 'system',
             'content': (
@@ -811,7 +1643,7 @@ def create_pulsar_signal_with_qwen(title, analysis, keypoints, editing_context, 
 def create_nova_profile(payload: NovaRequest):
     prompt = f"""\nYou are Nova, the music-discovery intelligence inside\nSyncora, a tool for video editors.\n\nAnalyze the editor's brief and produce two DIFFERENT\nkinds of music information.\n\n1. RETRIEVAL TAGS\n\nProduce exactly 6 established music tags that are likely\nto work as Last.fm search tags.\n\n2. SEMANTIC TRAITS\n\nProduce exactly 4 short descriptive qualities that\ndescribe the desired sound. These are used for semantic\nmatching and are NOT used directly as Last.fm searches.\n\n\nRETRIEVAL TAG RULES:\n\n- Use exactly 6.\n- Order them from strongest/specific to broader.\n- Use established genres, subgenres, styles, or common\n  music mood tags.\n- Prefer terms likely to exist on Last.fm.\n- Do not invent aesthetic phrases.\n- Do not use video terminology.\n- The six tags should represent complementary aspects\n  of the desired music where possible.\n\nBAD retrieval tags:\n\n"neon ambiance"\n"night drive music"\n"cinematic car edit"\n"city lights soundtrack"\n\nGOOD retrieval tags:\n\nsynthwave\ndream pop\nchillwave\nelectropop\nelectronic\natmospheric\ndarkwave\nshoegaze\nambient\ndowntempo\nindie pop\nalternative\nenergetic\n\n\nSEMANTIC TRAIT RULES:\n\n- Use exactly 4.\n- Keep each trait short.\n- They may describe atmosphere, texture, emotion,\n  momentum, build, payoff, sonic character, etc.\n- These ARE allowed to contain descriptive ideas that\n  would make poor Last.fm search tags.\n\nExamples:\n\n"neon nighttime atmosphere"\n"dreamy electronic texture"\n"gradual energetic build"\n"soft emotional vocals"\n\n\nGENERAL RULES:\n\n- Return valid JSON only.\n- Do not use Markdown.\n- Do not use code fences.\n- Do not recommend songs.\n- Do not recommend artists.\n- Do not explain your reasoning.\n- Keep everything concise.\n\nReturn exactly this JSON shape:\n\n{{\n    "retrieval_tags": [\n        "tag1",\n        "tag2",\n        "tag3",\n        "tag4",\n        "tag5",\n        "tag6"\n    ],\n    "semantic_traits": [\n        "trait1",\n        "trait2",\n        "trait3",\n        "trait4"\n    ],\n    "summary":\n        "one short sentence describing the desired music",\n    "energy":\n        "one short description",\n    "vocal_preference":\n        "one short description"\n}}\n\n\nEDITOR BRIEF\n\nProject:\n{payload.project_name}\n\nVideo type:\n{payload.video_type}\n\nDuration:\n{payload.target_duration_seconds} seconds\n\nMood:\n{payload.mood}\n\nPace:\n{payload.pace}\n\nVocals:\n{payload.vocal_style}\n\nStructure:\n{payload.structure_preference}\n\nCreative intent:\n{payload.creative_intent}\n"""
     try:
-        completion = client.chat.completions.create(model=QWEN_MODEL_ID, messages=[{'role': 'system', 'content': "You are Nova, Syncora's music-discovery assistant. Return concise valid JSON only."}, {'role': 'user', 'content': prompt}], temperature=0.25, top_p=0.8, max_tokens=400)
+        completion = create_llm_completion(model=QWEN_MODEL_ID, messages=[{'role': 'system', 'content': "You are Nova, Syncora's music-discovery assistant. Return concise valid JSON only."}, {'role': 'user', 'content': prompt}], temperature=0.25, top_p=0.8, max_tokens=400)
     except Exception as error:
         error_name = type(error).__name__
         if 'Timeout' in error_name or 'timeout' in str(error).lower():
@@ -1007,16 +1839,97 @@ async def enrich_shortlist_parallel(shortlist):
             warnings.append({'stage': 'lastfm_enrichment', 'track': candidate['title'], 'artist': candidate['artist'], 'message': error})
     return (enriched, warnings)
 
-def build_embedding_query(profile, active_retrieval_tags):
-    retrieval_text = ', '.join(active_retrieval_tags)
-    semantic_text = ', '.join(profile.get('semantic_traits', []))
-    return f"search_query: Desired music profile. Genres and styles: {retrieval_text}. Semantic qualities: {semantic_text}. Overall sound: {profile.get('summary', '')}. Energy: {profile.get('energy', '')}. Vocals: {profile.get('vocal_preference', '')}."
 
-def build_candidate_embedding_document(candidate):
-    tag_names = [tag['name'] for tag in candidate.get('top_tags', [])[:12] if tag.get('name')]
+def build_embedding_query(
+    profile,
+    active_retrieval_tags
+):
+    retrieval_text = ', '.join(
+        active_retrieval_tags
+    )
+
+    semantic_text = ', '.join(
+        profile.get(
+            'semantic_traits',
+            []
+        )
+    )
+
+    task_instruction = (
+        'Given a video editor\'s desired music profile, '
+        'retrieve candidate music profiles that best '
+        'match the requested genres, atmosphere, '
+        'energy, vocal character, and sonic qualities.'
+    )
+
+    query_text = (
+        'Desired music profile. '
+        f'Genres and styles: {retrieval_text}. '
+        f'Semantic qualities: {semantic_text}. '
+        f'Overall sound: {profile.get("summary", "")}. '
+        f'Energy: {profile.get("energy", "")}. '
+        f'Vocals: {profile.get("vocal_preference", "")}.'
+    )
+
+    if (
+        EMBEDDING_PROVIDER
+        ==
+        'huggingface'
+    ):
+        return (
+            f'Instruct: {task_instruction}\n'
+            f'Query: {query_text}'
+        )
+
+    return (
+        'search_query: '
+        + query_text
+    )
+
+
+def build_candidate_embedding_document(
+    candidate
+):
+    tag_names = [
+        tag['name']
+        for tag
+        in candidate.get(
+            'top_tags',
+            []
+        )[:12]
+        if tag.get('name')
+    ]
+
     if not tag_names:
-        tag_names = [match['tag'] for match in candidate.get('retrieval_matches', [])]
-    return 'search_document: Candidate music profile. Music tags and qualities: ' + ', '.join(tag_names) + '.'
+        tag_names = [
+            match['tag']
+            for match
+            in candidate.get(
+                'retrieval_matches',
+                []
+            )
+        ]
+
+    document_text = (
+        'Candidate music profile. '
+        'Music tags and qualities: '
+        + ', '.join(
+            tag_names
+        )
+        + '.'
+    )
+
+    if (
+        EMBEDDING_PROVIDER
+        ==
+        'huggingface'
+    ):
+        return document_text
+
+    return (
+        'search_document: '
+        + document_text
+    )
 
 def cosine_similarity(vector_a, vector_b):
     dot_product = sum((a * b for a, b in zip(vector_a, vector_b)))
@@ -1031,9 +1944,10 @@ def attach_semantic_similarity(profile, active_retrieval_tags, candidates):
     documents = [build_candidate_embedding_document(candidate) for candidate in candidates]
     texts = [query, *documents]
     try:
-        response = client.embeddings.create(model=EMBEDDING_MODEL_ID, input=texts)
-        ordered_data = sorted(response.data, key=lambda item: item.index)
-        vectors = [item.embedding for item in ordered_data]
+        vectors = create_embedding_vectors(
+            texts
+        )
+        
         if len(vectors) != len(texts):
             raise ValueError('Embedding model returned an unexpected vector count.')
         query_vector = vectors[0]
@@ -1281,7 +2195,10 @@ async def pulsar_analyze_start(payload: PulsarResolveRequest):
                 'track': track_payload,
                 'cache': {
                     'hit': True,
-                    'source': 'local_disk',
+                    'source': cached_entry.get(
+                        '_cache_source',
+                        'local_disk',
+                    ),
                 },
                 'cyanite': {
                     'enqueued': False,
@@ -1419,7 +2336,10 @@ async def pulsar_analyze_status(
                     True,
 
                 'source':
-                    'local_disk',
+                    cached_entry.get(
+                        '_cache_source',
+                        'local_disk',
+                    ),
             },
         }
 
@@ -1930,7 +2850,10 @@ async def pulsar_analyze_segments(library_track_id: str):
                     True,
 
                 'source':
-                    'local_disk',
+                    cached_entry.get(
+                        '_cache_source',
+                        'local_disk',
+                    ),
             },
 
             'timing_ms': {
@@ -2285,7 +3208,7 @@ def root():
 @app.get('/test-llm')
 def test_llm():
     try:
-        completion = client.chat.completions.create(model=QWEN_MODEL_ID, messages=[{'role': 'user', 'content': 'Reply with exactly: Syncora backend can talk to Nova Qwen.'}], temperature=0, max_tokens=30)
+        completion = create_llm_completion(model=QWEN_MODEL_ID, messages=[{'role': 'user', 'content': 'Reply with exactly: Syncora backend can talk to Nova Qwen.'}], temperature=0, max_tokens=30)
         return {'build': BUILD_ID, 'model': QWEN_MODEL_ID, 'response': completion.choices[0].message.content}
     except Exception as error:
         raise HTTPException(status_code=502, detail={'error': 'Qwen health check failed.', 'message': str(error), 'build': BUILD_ID})
@@ -2293,12 +3216,63 @@ def test_llm():
 @app.get('/test-embed')
 def test_embed():
     try:
-        response = client.embeddings.create(model=EMBEDDING_MODEL_ID, input=['search_query: dreamy synthwave music', 'search_document: atmospheric electronic synthwave music'])
-        ordered = sorted(response.data, key=lambda item: item.index)
-        similarity = cosine_similarity(ordered[0].embedding, ordered[1].embedding)
-        return {'build': BUILD_ID, 'model': EMBEDDING_MODEL_ID, 'similarity': round(similarity, 4)}
+        vectors = create_embedding_vectors(
+            [
+                'search_query: dreamy synthwave music',
+                (
+                    'search_document: atmospheric '
+                    'electronic synthwave music'
+                ),
+            ]
+        )
+
+        similarity = cosine_similarity(
+            vectors[0],
+            vectors[1],
+        )
+
+        return {
+            'build':
+                BUILD_ID,
+
+            'provider':
+                EMBEDDING_PROVIDER,
+
+            'model':
+                EMBEDDING_MODEL_ID,
+
+            'dimensions':
+                len(
+                    vectors[0]
+                ),
+
+            'similarity':
+                round(
+                    similarity,
+                    4
+                ),
+        }
+
     except Exception as error:
-        raise HTTPException(status_code=502, detail={'error': 'Embedding health check failed.', 'message': str(error), 'build': BUILD_ID})
+        raise HTTPException(
+            status_code=502,
+            detail={
+                'error':
+                    'Embedding health check failed.',
+
+                'message':
+                    str(error),
+
+                'provider':
+                    EMBEDDING_PROVIDER,
+
+                'model':
+                    EMBEDDING_MODEL_ID,
+
+                'build':
+                    BUILD_ID,
+            }
+        )
 
 @app.get('/test-lastfm')
 async def test_lastfm(tag: str='dreamy'):
