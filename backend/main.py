@@ -45,7 +45,7 @@ def get_setting(name, default=None):
     return default
 
 
-BUILD_ID = 'nova-hybrid-0.7.7'
+BUILD_ID = 'nova-hybrid-0.7.8'
 PULSAR_RESOLVER_BUILD_ID = 'pulsar-ytmusic-resolver-0.2.0'
 PULSAR_ANALYSIS_BUILD_ID = 'pulsar-signal-0.5.1'
 
@@ -65,6 +65,23 @@ EMBEDDING_PROVIDER = (
     )
     .strip()
     .casefold()
+)
+
+NOVA_DEBUG_RESPONSES = (
+    str(
+        get_setting(
+            'NOVA_DEBUG_RESPONSES',
+            'false',
+        )
+    )
+    .strip()
+    .casefold()
+    in {
+        '1',
+        'true',
+        'yes',
+        'on',
+    }
 )
 
 HF_TOKEN = get_setting(
@@ -3791,6 +3808,162 @@ def score_enriched_candidates(active_retrieval_tags, enriched_candidates, semant
     scored.sort(key=lambda item: (item['match_score'], item['semantic_similarity'] or 0, len(item['matched_nova_tags'])), reverse=True)
     return (scored, {'lastfm_tag_evidence': round(tag_max_points, 2), 'semantic_similarity': round(semantic_max_points, 2), 'lastfm_retrieval': round(retrieval_max_points, 2)})
 
+def build_nova_recommendation_reason(
+    candidate
+):
+    matched_tags = (
+        candidate.get(
+            'matched_nova_tags'
+        )
+        or
+        []
+    )
+
+    semantic_similarity = (
+        candidate.get(
+            'semantic_similarity'
+        )
+    )
+
+    score_breakdown = (
+        candidate.get(
+            'score_breakdown'
+        )
+        or
+        {}
+    )
+
+    try:
+        vocal_penalty = float(
+            score_breakdown.get(
+                'vocal_preference_penalty',
+                0.0,
+            )
+            or
+            0.0
+        )
+
+    except (
+        TypeError,
+        ValueError,
+    ):
+        vocal_penalty = 0.0
+
+    vocal_constraint = (
+        candidate.get(
+            'vocal_constraint'
+        )
+        or
+        {}
+    )
+
+    requested_mode = (
+        vocal_constraint.get(
+            'requested_mode'
+        )
+    )
+
+    if (
+        matched_tags
+        and
+        semantic_similarity
+        is not None
+    ):
+        reason = (
+            "Last.fm's track-specific tags matched "
+            "Nova's retrieval profile on "
+            +
+            ', '.join(
+                matched_tags
+            )
+            +
+            f", with semantic similarity "
+            f"{semantic_similarity:.2f}."
+        )
+
+    elif matched_tags:
+        reason = (
+            "Last.fm's track-specific tags matched "
+            "Nova's retrieval profile on "
+            +
+            ', '.join(
+                matched_tags
+            )
+            +
+            "."
+        )
+
+    elif (
+        semantic_similarity
+        is not None
+    ):
+        reason = (
+            "The track's Last.fm music profile "
+            "showed semantic compatibility with "
+            "Nova's desired sound "
+            f"({semantic_similarity:.2f})."
+        )
+
+    else:
+        reason = (
+            "The track ranked strongly in Nova's "
+            "Last.fm retrieval results."
+        )
+
+    if vocal_penalty <= 0:
+        return reason
+
+    if (
+        requested_mode
+        ==
+        'instrumental'
+    ):
+        adjustment = (
+            "Available Last.fm metadata also "
+            "suggests vocal content that may "
+            "conflict with the requested "
+            "instrumental preference, so Nova "
+            "reduced the score."
+        )
+
+    elif (
+        requested_mode
+        ==
+        'minimal'
+    ):
+        adjustment = (
+            "Available Last.fm metadata suggests "
+            "a more vocal-forward track than "
+            "requested, so Nova reduced the score."
+        )
+
+    elif (
+        requested_mode
+        ==
+        'vocal'
+    ):
+        adjustment = (
+            "Available Last.fm metadata suggests "
+            "the track may conflict with the "
+            "requested vocal preference, so Nova "
+            "reduced the score."
+        )
+
+    else:
+        adjustment = (
+            "Nova also applied a vocal-preference "
+            "adjustment based on the available "
+            "Last.fm metadata."
+        )
+
+    return (
+        reason
+        +
+        ' '
+        +
+        adjustment
+    )
+
 def select_top_three(candidates):
     if len(candidates) < 3:
         raise HTTPException(status_code=502, detail={'error': 'Nova could not produce three rankable song candidates.', 'stage': 'final_selection', 'candidate_count': len(candidates), 'build': BUILD_ID})
@@ -3813,16 +3986,18 @@ def select_top_three(candidates):
                 break
     recommendations = []
     for rank, candidate in enumerate(selected, start=1):
-        matched_tags = candidate['matched_nova_tags']
-        semantic_similarity = candidate['semantic_similarity']
-        if matched_tags and semantic_similarity is not None:
-            reason = "Last.fm's track-specific tags matched Nova's retrieval profile on " + ', '.join(matched_tags) + f', with semantic similarity {semantic_similarity:.2f}.'
-        elif matched_tags:
-            reason = "Last.fm's track-specific tags matched Nova's retrieval profile on " + ', '.join(matched_tags) + '.'
-        elif semantic_similarity is not None:
-            reason = f"The track's Last.fm music profile showed semantic compatibility with Nova's desired sound ({semantic_similarity:.2f})."
-        else:
-            reason = "The track ranked strongly in Nova's Last.fm retrieval results."
+        matched_tags = (
+            candidate[
+                'matched_nova_tags'
+            ]
+        )
+
+        reason = (
+            build_nova_recommendation_reason(
+                candidate
+            )
+        )
+        
         recommendations.append({'rank': rank, 'title': candidate['title'], 'artist': candidate['artist'], 'match_score': candidate['match_score'], 'reason': reason, 'semantic_similarity': candidate['semantic_similarity'], 'semantic_fit': candidate['semantic_fit'], 'score_breakdown': candidate['score_breakdown'], 'matched_tags': matched_tags, 'top_lastfm_tags': candidate['top_lastfm_tags'], 'match_evidence': candidate['match_evidence'], 'lastfm_url': candidate['lastfm_url'], 'mbid': candidate['mbid']})
     if len(recommendations) != 3:
         raise HTTPException(status_code=500, detail={'error': "Nova's final selection did not contain exactly three songs.", 'stage': 'final_selection', 'recommendation_count': len(recommendations), 'build': BUILD_ID})
@@ -5335,4 +5510,13 @@ async def nova_recommend(payload: NovaRequest):
     )
     
     total_ms = round((time.perf_counter() - total_start) * 1000)
-    return {'build': BUILD_ID, 'qwen_model': QWEN_MODEL_ID, 'embedding_model': EMBEDDING_MODEL_ID, 'mode': 'six-tag-sigmoid-hybrid', 'profile_source': profile_source, 'profile': profile, 'retrieval_debug': {'requested_tags': profile['retrieval_tags'], 'active_tags': active_retrieval_tags, 'dead_tags': search_bundle['dead_tags'], 'failed_queries': search_bundle['failed_queries'], 'candidate_strategy': 'top-2-per-usable-tag'}, 'shortlist_debug': shortlist_debug, 'candidate_count': candidate_count, 'shortlist_count': len(shortlist), 'semantic_available': semantic_available, 'timing_ms': {'qwen_profile': profile_ms, 'lastfm_initial_search': search_ms, 'lastfm_enrichment': enrichment_ms, 'embedding_similarity': embedding_ms, 'total': total_ms}, 'scoring_weights': scoring_weights, 'calibration_debug': calibration_debug, 'warnings': warnings, 'recommendation_count': len(recommendations), 'recommendations': recommendations}
+    return {'build': BUILD_ID, 'qwen_model': QWEN_MODEL_ID, 'embedding_model': EMBEDDING_MODEL_ID, 'mode': 'six-tag-sigmoid-hybrid', 'profile_source': profile_source, 'profile': profile, 'retrieval_debug': {'requested_tags': profile['retrieval_tags'], 'active_tags': active_retrieval_tags, 'dead_tags': search_bundle['dead_tags'], 'failed_queries': search_bundle['failed_queries'], 'candidate_strategy': 'top-2-per-usable-tag'}, 'shortlist_debug': shortlist_debug, 'candidate_count': candidate_count, 'shortlist_count': len(shortlist), 'semantic_available': semantic_available, 'timing_ms': {'qwen_profile': profile_ms, 'lastfm_initial_search': search_ms, 'lastfm_enrichment': enrichment_ms, 'embedding_similarity': embedding_ms, 'total': total_ms}, 'scoring_weights': scoring_weights, **(
+    {
+        'calibration_debug':
+            calibration_debug
+    }
+
+    if NOVA_DEBUG_RESPONSES
+
+    else {}
+), 'warnings': warnings, 'recommendation_count': len(recommendations), 'recommendations': recommendations}
