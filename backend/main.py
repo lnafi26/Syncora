@@ -3287,7 +3287,326 @@ def calibrate_semantic_similarity(
         ),
     )
 
-def score_enriched_candidates(active_retrieval_tags, enriched_candidates, semantic_available):
+def classify_requested_vocal_mode(
+    vocal_style
+):
+    normalized = normalize_tag(
+        str(
+            vocal_style
+            or
+            ''
+        )
+    )
+
+    if not normalized:
+        return 'neutral'
+
+    if (
+        'instrumental'
+        in normalized
+        or
+        'no vocal'
+        in normalized
+        or
+        'without vocal'
+        in normalized
+    ):
+        return 'instrumental'
+
+    if (
+        'minimal'
+        in normalized
+        or
+        'sparse vocal'
+        in normalized
+        or
+        'light vocal'
+        in normalized
+        or
+        'few vocal'
+        in normalized
+    ):
+        return 'minimal'
+
+    if (
+        'vocal'
+        in normalized
+        or
+        'singer'
+        in normalized
+        or
+        'lyric'
+        in normalized
+    ):
+        return 'vocal'
+
+    return 'neutral'
+
+
+def classify_candidate_vocal_state(
+    top_tags
+):
+    instrumental_tags = []
+    strong_vocal_tags = []
+    soft_vocal_tags = []
+
+    soft_vocal_markers = {
+        'pop',
+        'indie pop',
+        'dance pop',
+        'electropop',
+        'synthpop',
+        'pop rock',
+        'folk',
+        'indie folk',
+        'punk',
+        'soul',
+    }
+
+    for tag in (
+        top_tags
+        or
+        []
+    ):
+        tag_name = str(
+            tag.get(
+                'name',
+                ''
+            )
+            or
+            ''
+        )
+
+        normalized = normalize_tag(
+            tag_name
+        )
+
+        if not normalized:
+            continue
+
+        try:
+            count = float(
+                tag.get(
+                    'count',
+                    0
+                )
+                or
+                0
+            )
+
+        except (
+            TypeError,
+            ValueError,
+        ):
+            count = 0.0
+
+        words = set(
+            normalized.split()
+        )
+
+        if (
+            'instrumental'
+            in normalized
+        ):
+            instrumental_tags.append(
+                tag_name
+            )
+
+        strong_vocal = (
+            'vocal'
+            in normalized
+            or
+            'singer songwriter'
+            in normalized
+            or
+            'rap'
+            in words
+            or
+            'rapper'
+            in words
+            or
+            'hip hop'
+            in normalized
+            or
+            normalized
+            in {
+                'k pop',
+                'kpop',
+                'j pop',
+                'jpop',
+                'r b',
+                'rnb',
+                'a cappella',
+                'spoken word',
+            }
+        )
+
+        if strong_vocal:
+            strong_vocal_tags.append(
+                tag_name
+            )
+
+            continue
+
+        if (
+            normalized
+            in soft_vocal_markers
+            and
+            count >= 5
+        ):
+            soft_vocal_tags.append(
+                tag_name
+            )
+
+    if (
+        instrumental_tags
+        and
+        strong_vocal_tags
+    ):
+        state = 'mixed'
+
+    elif instrumental_tags:
+        state = 'instrumental'
+
+    elif strong_vocal_tags:
+        state = 'vocal'
+
+    elif soft_vocal_tags:
+        state = 'likely_vocal'
+
+    else:
+        state = 'unknown'
+
+    return {
+        'state':
+            state,
+
+        'instrumental_evidence':
+            instrumental_tags,
+
+        'strong_vocal_evidence':
+            strong_vocal_tags,
+
+        'soft_vocal_evidence':
+            soft_vocal_tags,
+    }
+
+
+def evaluate_vocal_preference(
+    vocal_style,
+    top_tags
+):
+    requested_mode = (
+        classify_requested_vocal_mode(
+            vocal_style
+        )
+    )
+
+    evidence = (
+        classify_candidate_vocal_state(
+            top_tags
+        )
+    )
+
+    candidate_state = (
+        evidence[
+            'state'
+        ]
+    )
+
+    penalty = 0.0
+
+    if (
+        requested_mode
+        ==
+        'instrumental'
+    ):
+        if (
+            candidate_state
+            ==
+            'vocal'
+        ):
+            penalty = 14.0
+
+        elif (
+            candidate_state
+            ==
+            'likely_vocal'
+        ):
+            penalty = 8.0
+
+        elif (
+            candidate_state
+            ==
+            'mixed'
+        ):
+            penalty = 4.0
+
+    elif (
+        requested_mode
+        ==
+        'minimal'
+    ):
+        if (
+            candidate_state
+            ==
+            'vocal'
+        ):
+            penalty = 10.0
+
+        elif (
+            candidate_state
+            ==
+            'likely_vocal'
+        ):
+            penalty = 5.0
+
+        elif (
+            candidate_state
+            ==
+            'mixed'
+        ):
+            penalty = 2.0
+
+    elif (
+        requested_mode
+        ==
+        'vocal'
+    ):
+        if (
+            candidate_state
+            ==
+            'instrumental'
+        ):
+            penalty = 10.0
+
+    return {
+        'requested_mode':
+            requested_mode,
+
+        'candidate_state':
+            candidate_state,
+
+        'penalty':
+            penalty,
+
+        'instrumental_evidence':
+            evidence[
+                'instrumental_evidence'
+            ],
+
+        'strong_vocal_evidence':
+            evidence[
+                'strong_vocal_evidence'
+            ],
+
+        'soft_vocal_evidence':
+            evidence[
+                'soft_vocal_evidence'
+            ],
+    }
+
+def score_enriched_candidates(active_retrieval_tags, enriched_candidates, semantic_available, vocal_style=''):
     desired_tags = active_retrieval_tags
     importance_weights = [1.0, 0.94, 0.88, 0.82, 0.76, 0.7]
     total_importance = sum(importance_weights[:len(desired_tags)])
@@ -3339,10 +3658,71 @@ def score_enriched_candidates(active_retrieval_tags, enriched_candidates, semant
             rank = retrieval['rank']
             rank_quality = max(0.1, (11 - rank) / 10)
             retrieval_evidence += importance * rank_quality
-        retrieval_points = min(retrieval_max_points, retrieval_evidence / 1.4 * retrieval_max_points)
-        score = tag_evidence_points + semantic_points + retrieval_points
+
+        retrieval_points = min(
+            retrieval_max_points,
+            retrieval_evidence
+            /
+            1.4
+            *
+            retrieval_max_points
+        )
+
+        vocal_constraint = (
+            evaluate_vocal_preference(
+                vocal_style,
+                top_tags
+            )
+        )
+
+        vocal_penalty = float(
+            vocal_constraint[
+                'penalty'
+            ]
+        )
+
+        base_score = (
+            tag_evidence_points
+            +
+            semantic_points
+            +
+            retrieval_points
+        )
+
+        score = (
+            base_score
+            -
+            vocal_penalty
+        )
         score = int(round(min(99, max(0, score))))
-        scored.append({'title': candidate['title'], 'artist': candidate['artist'], 'match_score': score, 'semantic_similarity': round(raw_semantic_similarity, 4) if raw_semantic_similarity is not None else None, 'semantic_fit': round(semantic_fit, 4) if semantic_available else None, 'score_breakdown': {'lastfm_tag_evidence': round(tag_evidence_points, 2), 'semantic_fit': round(semantic_points, 2), 'lastfm_retrieval': round(retrieval_points, 2)}, 'matched_nova_tags': [match['nova_tag'] for match in matched_desired], 'match_evidence': matched_desired, 'retrieval_matches': candidate['retrieval_matches'], 'top_lastfm_tags': top_tags[:8], 'lastfm_url': candidate['lastfm_url'], 'mbid': candidate['mbid']})
+        scored.append({'title': candidate['title'], 'artist': candidate['artist'], 'match_score': score, 'semantic_similarity': round(raw_semantic_similarity, 4) if raw_semantic_similarity is not None else None, 'semantic_fit': round(semantic_fit, 4) if semantic_available else None, 'score_breakdown': {
+    'lastfm_tag_evidence':
+        round(
+            tag_evidence_points,
+            2
+        ),
+
+    'semantic_fit':
+        round(
+            semantic_points,
+            2
+        ),
+
+    'lastfm_retrieval':
+        round(
+            retrieval_points,
+            2
+        ),
+
+    'vocal_preference_penalty':
+        round(
+            vocal_penalty,
+            2
+        ),
+},
+
+'vocal_constraint':
+    vocal_constraint, 'matched_nova_tags': [match['nova_tag'] for match in matched_desired], 'match_evidence': matched_desired, 'retrieval_matches': candidate['retrieval_matches'], 'top_lastfm_tags': top_tags[:8], 'lastfm_url': candidate['lastfm_url'], 'mbid': candidate['mbid']})
     scored.sort(key=lambda item: (item['match_score'], item['semantic_similarity'] or 0, len(item['matched_nova_tags'])), reverse=True)
     return (scored, {'lastfm_tag_evidence': round(tag_max_points, 2), 'semantic_similarity': round(semantic_max_points, 2), 'lastfm_retrieval': round(retrieval_max_points, 2)})
 
@@ -4852,7 +5232,8 @@ async def nova_recommend(payload: NovaRequest):
     scored, scoring_weights = score_enriched_candidates(
         active_retrieval_tags,
         semantic_candidates,
-        semantic_available
+        semantic_available,
+        payload.vocal_style
     )
 
     calibration_debug = (
