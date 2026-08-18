@@ -2693,16 +2693,8 @@ def build_nova_calibration_debug(
         'embedding_model':
             EMBEDDING_MODEL_ID,
 
-        'current_calibration': {
-            'type':
-                'sigmoid',
-
-            'midpoint':
-                0.78,
-
-            'steepness':
-                30.0,
-        },
+        'current_calibration':
+            get_semantic_calibration_profile(),
 
         'distribution':
             distribution,
