@@ -128,6 +128,14 @@ if EMBEDDING_PROVIDER not in {
         f'{EMBEDDING_PROVIDER}'
     )
 
+LLM_PROVIDER_LABEL = {
+    'local':
+        'LM Studio',
+
+    'huggingface':
+        'Hugging Face',
+}[LLM_PROVIDER]
+
 if (
     (
         LLM_PROVIDER == 'huggingface'
@@ -1746,6 +1754,7 @@ def create_pulsar_signal_with_qwen(title, analysis, keypoints, editing_context, 
         }
     ], temperature=0.2, top_p=0.8, max_tokens=1400)
 
+
     except Exception as error:
         error_name = (
             type(error).__name__
@@ -1759,22 +1768,41 @@ def create_pulsar_signal_with_qwen(title, analysis, keypoints, editing_context, 
             error_text.casefold()
         )
 
+        print(
+            '[PULSAR AI ERROR] '
+            f'provider={LLM_PROVIDER} '
+            f'{error_name}: {error_text}'
+        )
+
         if (
             'Timeout' in error_name
             or
             'timeout' in error_text_lower
         ):
+            provider_message = (
+                (
+                    'Hugging Face inference did not finish '
+                    'the Signal within the configured timeout.'
+                )
+                if LLM_PROVIDER == 'huggingface'
+                else
+                (
+                    'The local AI model did not finish '
+                    'the Signal within the configured timeout.'
+                )
+            )
+
             raise HTTPException(
                 status_code=504,
                 detail={
                     'error':
-                        "Pulsar's Qwen request timed out.",
+                        (
+                            "Pulsar's AI interpretation "
+                            "timed out."
+                        ),
 
                     'message':
-                        (
-                            'The local AI model did not finish '
-                            'the Signal within the configured timeout.'
-                        ),
+                        provider_message,
 
                     'stage':
                         'pulsar_qwen_signal',
@@ -1784,6 +1812,9 @@ def create_pulsar_signal_with_qwen(title, analysis, keypoints, editing_context, 
 
                     'analysis_preserved':
                         True,
+
+                    'provider':
+                        LLM_PROVIDER,
 
                     'model':
                         QWEN_MODEL_ID,
@@ -1800,9 +1831,13 @@ def create_pulsar_signal_with_qwen(title, analysis, keypoints, editing_context, 
             'mlx_lm',
         ]
 
-        if any(
-            marker in error_text_lower
-            for marker in mlx_crash_markers
+        if (
+            LLM_PROVIDER == 'local'
+            and
+            any(
+                marker in error_text_lower
+                for marker in mlx_crash_markers
+            )
         ):
             raise HTTPException(
                 status_code=502,
@@ -1830,6 +1865,9 @@ def create_pulsar_signal_with_qwen(title, analysis, keypoints, editing_context, 
                     'analysis_preserved':
                         True,
 
+                    'provider':
+                        LLM_PROVIDER,
+
                     'model':
                         QWEN_MODEL_ID,
 
@@ -1838,14 +1876,32 @@ def create_pulsar_signal_with_qwen(title, analysis, keypoints, editing_context, 
                 }
             )
 
+        provider_message = (
+            (
+                'The cloud AI provider could not complete '
+                'the Signal interpretation. Try again in '
+                'a moment.'
+            )
+            if LLM_PROVIDER == 'huggingface'
+            else
+            (
+                'The local AI model could not complete '
+                'the Signal interpretation. Make sure '
+                'LM Studio and the Qwen model are running.'
+            )
+        )
+
         raise HTTPException(
             status_code=502,
             detail={
                 'error':
-                    'Pulsar could not reach Qwen.',
+                    (
+                        'Pulsar could not complete '
+                        'AI interpretation.'
+                    ),
 
                 'message':
-                    error_text,
+                    provider_message,
 
                 'stage':
                     'pulsar_qwen_signal',
@@ -1856,6 +1912,9 @@ def create_pulsar_signal_with_qwen(title, analysis, keypoints, editing_context, 
                 'analysis_preserved':
                     True,
 
+                'provider':
+                    LLM_PROVIDER,
+
                 'model':
                     QWEN_MODEL_ID,
 
@@ -1865,7 +1924,35 @@ def create_pulsar_signal_with_qwen(title, analysis, keypoints, editing_context, 
         )
     
     if not completion.choices:
-        raise HTTPException(status_code=502, detail={'error': 'LM Studio returned zero Pulsar choices.', 'stage': 'pulsar_qwen_validation', 'retryable': True, 'analysis_preserved': True, 'build': PULSAR_ANALYSIS_BUILD_ID})
+        raise HTTPException(
+            status_code=502,
+            detail={
+                'error':
+                    (
+                        f'{LLM_PROVIDER_LABEL} returned '
+                        'zero Pulsar choices.'
+                    ),
+
+                'stage':
+                    'pulsar_qwen_validation',
+
+                'retryable':
+                    True,
+
+                'analysis_preserved':
+                    True,
+
+                'provider':
+                    LLM_PROVIDER,
+
+                'model':
+                    QWEN_MODEL_ID,
+
+                'build':
+                    PULSAR_ANALYSIS_BUILD_ID,
+            }
+        )
+
     raw = completion.choices[0].message.content
     parsed = parse_pulsar_json(raw)
     signal_summary = parsed.get('signal_summary')
@@ -1897,10 +1984,143 @@ def create_nova_profile(payload: NovaRequest):
     try:
         completion = create_llm_completion(model=QWEN_MODEL_ID, messages=[{'role': 'system', 'content': "You are Nova, Syncora's music-discovery assistant. Return concise valid JSON only."}, {'role': 'user', 'content': prompt}], temperature=0.25, top_p=0.8, max_tokens=400)
     except Exception as error:
-        error_name = type(error).__name__
-        if 'Timeout' in error_name or 'timeout' in str(error).lower():
-            raise HTTPException(status_code=504, detail={'error': "Nova's Qwen request timed out.", 'stage': 'qwen_profile', 'message': 'LM Studio did not complete the profile generation within the configured timeout.', 'model': QWEN_MODEL_ID, 'build': BUILD_ID})
-        raise HTTPException(status_code=502, detail={'error': 'Nova could not reach Qwen.', 'stage': 'qwen_profile', 'message': str(error), 'model': QWEN_MODEL_ID, 'build': BUILD_ID})
+        error_name = (
+            type(error).__name__
+        )
+
+        error_text = str(
+            error
+        )
+
+        error_text_lower = (
+            error_text.casefold()
+        )
+
+        print(
+            '[NOVA AI ERROR] '
+            f'provider={LLM_PROVIDER} '
+            f'{error_name}: {error_text}'
+        )
+
+        if (
+            'Timeout' in error_name
+            or
+            'timeout' in error_text_lower
+        ):
+            provider_message = (
+                (
+                    'Hugging Face inference did not finish '
+                    'the Nova profile within the configured '
+                    'timeout.'
+                )
+                if LLM_PROVIDER == 'huggingface'
+                else
+                (
+                    'LM Studio did not complete the Nova '
+                    'profile within the configured timeout.'
+                )
+            )
+
+            raise HTTPException(
+                status_code=504,
+                detail={
+                    'error':
+                        (
+                            "Nova's AI profile generation "
+                            "timed out."
+                        ),
+
+                    'message':
+                        provider_message,
+
+                    'stage':
+                        'qwen_profile',
+
+                    'retryable':
+                        True,
+
+                    'provider':
+                        LLM_PROVIDER,
+
+                    'model':
+                        QWEN_MODEL_ID,
+
+                    'build':
+                        BUILD_ID,
+                }
+            )
+
+        provider_message = (
+            (
+                'The cloud AI provider could not complete '
+                'Nova profile generation. Try again in a '
+                'moment.'
+            )
+            if LLM_PROVIDER == 'huggingface'
+            else
+            (
+                'The local AI model could not complete '
+                'Nova profile generation. Make sure '
+                'LM Studio and the Nova model are running.'
+            )
+        )
+
+        raise HTTPException(
+            status_code=502,
+            detail={
+                'error':
+                    (
+                        'Nova could not complete '
+                        'AI profile generation.'
+                    ),
+
+                'message':
+                    provider_message,
+
+                'stage':
+                    'qwen_profile',
+
+                'retryable':
+                    True,
+
+                'provider':
+                    LLM_PROVIDER,
+
+                'model':
+                    QWEN_MODEL_ID,
+
+                'build':
+                    BUILD_ID,
+            }
+        )
+
+    if not completion.choices:
+        raise HTTPException(
+            status_code=502,
+            detail={
+                'error':
+                    (
+                        f'{LLM_PROVIDER_LABEL} returned '
+                        'zero Nova choices.'
+                    ),
+
+                'stage':
+                    'nova_qwen_validation',
+
+                'retryable':
+                    True,
+
+                'provider':
+                    LLM_PROVIDER,
+
+                'model':
+                    QWEN_MODEL_ID,
+
+                'build':
+                    BUILD_ID,
+            }
+        )
+
     if not completion.choices:
         raise HTTPException(status_code=502, detail={'error': 'LM Studio returned zero Qwen choices.', 'stage': 'nova_qwen_validation', 'retryable': True, 'model': QWEN_MODEL_ID, 'build': BUILD_ID})
     raw = completion.choices[0].message.content
