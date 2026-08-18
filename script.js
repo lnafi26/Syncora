@@ -2,6 +2,12 @@ const SUPABASE_URL = 'https://phxusxkhzxllrioxuzkr.supabase.co';
 const SUPABASE_KEY = 'sb_publishable_3GHRzFe9g3kgcvTaeTBtyQ_GDih979C';
 const db = supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
 
+const AUTH_REDIRECT_URL =
+    new URL(
+        "./",
+        window.location.href
+    ).href;
+
 // =====================================================
 // SUPABASE AUTHENTICATION
 // =====================================================
@@ -135,9 +141,10 @@ async function signUp() {
             email,
             password,
             options: {
-                emailRedirectTo: window.location.origin
+                emailRedirectTo:
+                    AUTH_REDIRECT_URL
             }
-        });
+        }); //test
 
         if (error) {
             const message = error.message?.toLowerCase() || "";
@@ -530,6 +537,24 @@ function getBackendErrorDetail(data) {
     return {};
 }
 
+function getAiProviderLabel(provider) {
+    if (
+        provider ===
+        "huggingface"
+    ) {
+        return "Hugging Face";
+    }
+
+    if (
+        provider ===
+        "local"
+    ) {
+        return "LM Studio";
+    }
+
+    return "the AI service";
+}
+
 function isQwenPulsarStage(stage) {
     return [
         "pulsar_qwen_signal",
@@ -553,8 +578,8 @@ function getPulsarErrorPresentation(error) {
                 "Syncora backend couldn't be reached.",
 
             detail:
-                "The browser lost its connection to FastAPI. Make sure the backend is still running, then try again.",
-
+                "The browser lost its connection to the Syncora backend service. Check your connection and try again in a moment.",
+            
             toast:
                 "Backend connection lost."
         };
@@ -614,21 +639,37 @@ function getPulsarErrorPresentation(error) {
     if (
         stage === "pulsar_qwen_signal"
     ) {
+        const provider =
+            error?.detail?.provider
+            ||
+            null;
+
+        const providerLabel =
+            getAiProviderLabel(
+                provider
+            );
+
+        const localProvider =
+            provider ===
+            "local";
+
         return {
             title:
                 error?.status === 504
                     ? "Pulsar's AI interpretation timed out."
-                    : "Pulsar couldn't reach the local AI model.",
+                    : `Pulsar couldn't reach ${providerLabel}.`,
 
             detail:
                 error?.status === 504
                     ? "The audio analysis is complete and cached. Try Generate Signal again; Pulsar will reuse the existing analysis instead of spending another Cyanite analysis."
-                    : "Make sure LM Studio is running and the Qwen model is loaded. The audio analysis is already cached, so it is safe to retry.",
+                    : localProvider
+                        ? "Make sure LM Studio is running and the Qwen model is loaded. The audio analysis is already cached, so it is safe to retry."
+                        : "The cloud AI service could not complete the Signal interpretation. The audio analysis is already cached, so it is safe to retry.",
 
             toast:
                 error?.status === 504
-                    ? "Qwen timed out; audio analysis is safe."
-                    : "Qwen is unavailable; audio analysis is safe."
+                    ? "AI interpretation timed out; audio analysis is safe."
+                    : "AI interpretation is unavailable; audio analysis is safe."
         };
     }
 
@@ -748,8 +789,8 @@ function getPulsarErrorPresentation(error) {
                 "Syncora hit an internal backend error.",
 
             detail:
-                "Check the FastAPI terminal for the logged error before trying again.",
-
+                "The backend encountered an unexpected error. Try again in a moment.",
+            
             toast:
                 "Backend error."
         };
@@ -1202,14 +1243,42 @@ function getNovaApiErrorMessage(response, data) {
     if (
         stage === "qwen_profile"
     ) {
-        if (response.status === 504) {
+        const provider =
+            detail.provider
+            ||
+            null;
+
+        const providerLabel =
+            getAiProviderLabel(
+                provider
+            );
+
+        if (
+            response.status === 504
+        ) {
             return (
-                "Nova's local Qwen model took too long to build the music profile. Make sure LM Studio is responsive, then try again."
+                `Nova's AI profile generation through ${providerLabel} took too long. Try generating the shortlist again.`
+            );
+        }
+
+        if (
+            provider === "local"
+        ) {
+            return (
+                "Nova couldn't reach LM Studio. Make sure LM Studio is running and the Nova model is loaded."
             );
         }
 
         return (
-            "Nova couldn't reach the local Qwen model. Make sure LM Studio is running and the Nova model is loaded."
+            `Nova couldn't reach ${providerLabel}. Try generating the shortlist again in a moment.`
+        );
+    }
+
+    if (
+        stage === "nova_qwen_validation"
+    ) {
+        return (
+            "Nova received an unusable AI response. Try generating the shortlist again."
         );
     }
 
@@ -1261,7 +1330,7 @@ function getNovaApiErrorMessage(response, data) {
         stage === "internal"
     ) {
         return (
-            "The Syncora backend hit an unexpected error while running Nova. Check the FastAPI terminal for details."
+            "The Syncora backend hit an unexpected error while running Nova. Try again in a moment."
         );
     }
 

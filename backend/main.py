@@ -45,7 +45,7 @@ def get_setting(name, default=None):
     return default
 
 
-BUILD_ID = 'nova-hybrid-0.7.5'
+BUILD_ID = 'nova-hybrid-0.7.8'
 PULSAR_RESOLVER_BUILD_ID = 'pulsar-ytmusic-resolver-0.2.0'
 PULSAR_ANALYSIS_BUILD_ID = 'pulsar-signal-0.5.1'
 
@@ -65,6 +65,23 @@ EMBEDDING_PROVIDER = (
     )
     .strip()
     .casefold()
+)
+
+NOVA_DEBUG_RESPONSES = (
+    str(
+        get_setting(
+            'NOVA_DEBUG_RESPONSES',
+            'false',
+        )
+    )
+    .strip()
+    .casefold()
+    in {
+        '1',
+        'true',
+        'yes',
+        'on',
+    }
 )
 
 HF_TOKEN = get_setting(
@@ -111,6 +128,57 @@ EMBEDDING_MODEL_ID = get_setting(
     ),
 )
 
+SEMANTIC_CALIBRATION_PROFILES = {
+    'Qwen/Qwen3-Embedding-8B': {
+        'type':
+            'bounded_sigmoid',
+
+        'floor':
+            0.40,
+
+        'midpoint':
+            0.50,
+
+        'ceiling':
+            0.64,
+
+        'steepness':
+            16.0,
+    },
+}
+
+
+DEFAULT_SEMANTIC_CALIBRATION = {
+    'type':
+        'bounded_sigmoid',
+
+    'floor':
+        0.40,
+
+    'midpoint':
+        0.50,
+
+    'ceiling':
+        0.64,
+
+    'steepness':
+        16.0,
+}
+
+
+def get_semantic_calibration_profile():
+    profile = (
+        SEMANTIC_CALIBRATION_PROFILES.get(
+            EMBEDDING_MODEL_ID
+        )
+        or
+        DEFAULT_SEMANTIC_CALIBRATION
+    )
+
+    return dict(
+        profile
+    )
+
 if LLM_PROVIDER not in {
     'local',
     'huggingface',
@@ -127,6 +195,14 @@ if EMBEDDING_PROVIDER not in {
         'Unsupported EMBEDDING_PROVIDER: '
         f'{EMBEDDING_PROVIDER}'
     )
+
+LLM_PROVIDER_LABEL = {
+    'local':
+        'LM Studio',
+
+    'huggingface':
+        'Hugging Face',
+}[LLM_PROVIDER]
 
 if (
     (
@@ -212,7 +288,96 @@ print('==========================================')
 if not LASTFM_API_KEY:
     raise RuntimeError(f'LASTFM_API_KEY could not be read from {ENV_PATH}')
 app = FastAPI(title='Syncora Backend', version='0.7.5')
-app.add_middleware(CORSMiddleware, allow_origins=['http://localhost:3000', 'http://127.0.0.1:3000'], allow_credentials=True, allow_methods=['*'], allow_headers=['*'])
+
+
+ALLOWED_ORIGINS = [
+    origin.strip().rstrip('/')
+
+    for origin
+    in get_setting(
+        'ALLOWED_ORIGINS',
+        (
+            'http://localhost:3000,'
+            'http://127.0.0.1:3000'
+        ),
+    ).split(',')
+
+    if origin.strip()
+]
+
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=ALLOWED_ORIGINS,
+    allow_credentials=True,
+    allow_methods=['*'],
+    allow_headers=['*'],
+)
+
+def apply_nova_explicit_constraints(
+    profile,
+    payload
+):
+    if not isinstance(
+        profile,
+        dict,
+    ):
+        return profile
+
+    adjusted = dict(
+        profile
+    )
+
+    retrieval_tags = list(
+        adjusted.get(
+            'retrieval_tags'
+        )
+        or
+        []
+    )
+
+    requested_vocal_mode = (
+        classify_requested_vocal_mode(
+            payload.vocal_style
+        )
+    )
+
+    if (
+        requested_vocal_mode
+        ==
+        'instrumental'
+    ):
+        already_present = any(
+            normalize_tag(
+                tag
+            )
+            ==
+            'instrumental'
+            for tag
+            in retrieval_tags
+        )
+
+        if not already_present:
+            if len(
+                retrieval_tags
+            ) >= 6:
+                retrieval_tags[
+                    -1
+                ] = 'instrumental'
+
+            else:
+                retrieval_tags.append(
+                    'instrumental'
+                )
+
+    adjusted[
+        'retrieval_tags'
+    ] = clean_string_list(
+        retrieval_tags,
+        6,
+    )
+
+    return adjusted
+
 
 @app.exception_handler(RequestValidationError)
 async def validation_exception_handler(request: Request, exc: RequestValidationError):
@@ -1707,13 +1872,12 @@ def create_pulsar_signal_with_qwen(title, analysis, keypoints, editing_context, 
         {
             'role': 'system',
             'content': (
-                "You are Pulsar, Syncora's editing-cue interpreter. "
-                "The supplied edit_window is authoritative for timing "
-                "and may begin anywhere in the song. The editor does "
-                "not need to restate duration or source-position rules "
-                "inside editing_context. Treat editing_context purely "
-                "as creative direction. Never invent timestamps or "
-                "musical facts. Return valid JSON only."
+                "You are Nova, Syncora's music-discovery assistant. "
+                "Translate creative briefs into musically coherent "
+                "Last.fm retrieval terms while strictly separating "
+                "visual or aesthetic context from audible musical "
+                "properties. Never infer a niche genre from visual "
+                "context alone. Return concise valid JSON only."
             )
         },
         {
@@ -1721,6 +1885,7 @@ def create_pulsar_signal_with_qwen(title, analysis, keypoints, editing_context, 
             'content': prompt
         }
     ], temperature=0.2, top_p=0.8, max_tokens=1400)
+
 
     except Exception as error:
         error_name = (
@@ -1735,22 +1900,41 @@ def create_pulsar_signal_with_qwen(title, analysis, keypoints, editing_context, 
             error_text.casefold()
         )
 
+        print(
+            '[PULSAR AI ERROR] '
+            f'provider={LLM_PROVIDER} '
+            f'{error_name}: {error_text}'
+        )
+
         if (
             'Timeout' in error_name
             or
             'timeout' in error_text_lower
         ):
+            provider_message = (
+                (
+                    'Hugging Face inference did not finish '
+                    'the Signal within the configured timeout.'
+                )
+                if LLM_PROVIDER == 'huggingface'
+                else
+                (
+                    'The local AI model did not finish '
+                    'the Signal within the configured timeout.'
+                )
+            )
+
             raise HTTPException(
                 status_code=504,
                 detail={
                     'error':
-                        "Pulsar's Qwen request timed out.",
+                        (
+                            "Pulsar's AI interpretation "
+                            "timed out."
+                        ),
 
                     'message':
-                        (
-                            'The local AI model did not finish '
-                            'the Signal within the configured timeout.'
-                        ),
+                        provider_message,
 
                     'stage':
                         'pulsar_qwen_signal',
@@ -1760,6 +1944,9 @@ def create_pulsar_signal_with_qwen(title, analysis, keypoints, editing_context, 
 
                     'analysis_preserved':
                         True,
+
+                    'provider':
+                        LLM_PROVIDER,
 
                     'model':
                         QWEN_MODEL_ID,
@@ -1776,9 +1963,13 @@ def create_pulsar_signal_with_qwen(title, analysis, keypoints, editing_context, 
             'mlx_lm',
         ]
 
-        if any(
-            marker in error_text_lower
-            for marker in mlx_crash_markers
+        if (
+            LLM_PROVIDER == 'local'
+            and
+            any(
+                marker in error_text_lower
+                for marker in mlx_crash_markers
+            )
         ):
             raise HTTPException(
                 status_code=502,
@@ -1806,6 +1997,9 @@ def create_pulsar_signal_with_qwen(title, analysis, keypoints, editing_context, 
                     'analysis_preserved':
                         True,
 
+                    'provider':
+                        LLM_PROVIDER,
+
                     'model':
                         QWEN_MODEL_ID,
 
@@ -1814,14 +2008,32 @@ def create_pulsar_signal_with_qwen(title, analysis, keypoints, editing_context, 
                 }
             )
 
+        provider_message = (
+            (
+                'The cloud AI provider could not complete '
+                'the Signal interpretation. Try again in '
+                'a moment.'
+            )
+            if LLM_PROVIDER == 'huggingface'
+            else
+            (
+                'The local AI model could not complete '
+                'the Signal interpretation. Make sure '
+                'LM Studio and the Qwen model are running.'
+            )
+        )
+
         raise HTTPException(
             status_code=502,
             detail={
                 'error':
-                    'Pulsar could not reach Qwen.',
+                    (
+                        'Pulsar could not complete '
+                        'AI interpretation.'
+                    ),
 
                 'message':
-                    error_text,
+                    provider_message,
 
                 'stage':
                     'pulsar_qwen_signal',
@@ -1832,6 +2044,9 @@ def create_pulsar_signal_with_qwen(title, analysis, keypoints, editing_context, 
                 'analysis_preserved':
                     True,
 
+                'provider':
+                    LLM_PROVIDER,
+
                 'model':
                     QWEN_MODEL_ID,
 
@@ -1841,7 +2056,35 @@ def create_pulsar_signal_with_qwen(title, analysis, keypoints, editing_context, 
         )
     
     if not completion.choices:
-        raise HTTPException(status_code=502, detail={'error': 'LM Studio returned zero Pulsar choices.', 'stage': 'pulsar_qwen_validation', 'retryable': True, 'analysis_preserved': True, 'build': PULSAR_ANALYSIS_BUILD_ID})
+        raise HTTPException(
+            status_code=502,
+            detail={
+                'error':
+                    (
+                        f'{LLM_PROVIDER_LABEL} returned '
+                        'zero Pulsar choices.'
+                    ),
+
+                'stage':
+                    'pulsar_qwen_validation',
+
+                'retryable':
+                    True,
+
+                'analysis_preserved':
+                    True,
+
+                'provider':
+                    LLM_PROVIDER,
+
+                'model':
+                    QWEN_MODEL_ID,
+
+                'build':
+                    PULSAR_ANALYSIS_BUILD_ID,
+            }
+        )
+
     raw = completion.choices[0].message.content
     parsed = parse_pulsar_json(raw)
     signal_summary = parsed.get('signal_summary')
@@ -1869,14 +2112,491 @@ def create_pulsar_signal_with_qwen(title, analysis, keypoints, editing_context, 
     return {'signal_summary': signal_summary.strip(), 'cues': validated_cues}
 
 def create_nova_profile(payload: NovaRequest):
-    prompt = f"""\nYou are Nova, the music-discovery intelligence inside\nSyncora, a tool for video editors.\n\nAnalyze the editor's brief and produce two DIFFERENT\nkinds of music information.\n\n1. RETRIEVAL TAGS\n\nProduce exactly 6 established music tags that are likely\nto work as Last.fm search tags.\n\n2. SEMANTIC TRAITS\n\nProduce exactly 4 short descriptive qualities that\ndescribe the desired sound. These are used for semantic\nmatching and are NOT used directly as Last.fm searches.\n\n\nRETRIEVAL TAG RULES:\n\n- Use exactly 6.\n- Order them from strongest/specific to broader.\n- Use established genres, subgenres, styles, or common\n  music mood tags.\n- Prefer terms likely to exist on Last.fm.\n- Do not invent aesthetic phrases.\n- Do not use video terminology.\n- The six tags should represent complementary aspects\n  of the desired music where possible.\n\nBAD retrieval tags:\n\n"neon ambiance"\n"night drive music"\n"cinematic car edit"\n"city lights soundtrack"\n\nGOOD retrieval tags:\n\nsynthwave\ndream pop\nchillwave\nelectropop\nelectronic\natmospheric\ndarkwave\nshoegaze\nambient\ndowntempo\nindie pop\nalternative\nenergetic\n\n\nSEMANTIC TRAIT RULES:\n\n- Use exactly 4.\n- Keep each trait short.\n- They may describe atmosphere, texture, emotion,\n  momentum, build, payoff, sonic character, etc.\n- These ARE allowed to contain descriptive ideas that\n  would make poor Last.fm search tags.\n\nExamples:\n\n"neon nighttime atmosphere"\n"dreamy electronic texture"\n"gradual energetic build"\n"soft emotional vocals"\n\n\nGENERAL RULES:\n\n- Return valid JSON only.\n- Do not use Markdown.\n- Do not use code fences.\n- Do not recommend songs.\n- Do not recommend artists.\n- Do not explain your reasoning.\n- Keep everything concise.\n\nReturn exactly this JSON shape:\n\n{{\n    "retrieval_tags": [\n        "tag1",\n        "tag2",\n        "tag3",\n        "tag4",\n        "tag5",\n        "tag6"\n    ],\n    "semantic_traits": [\n        "trait1",\n        "trait2",\n        "trait3",\n        "trait4"\n    ],\n    "summary":\n        "one short sentence describing the desired music",\n    "energy":\n        "one short description",\n    "vocal_preference":\n        "one short description"\n}}\n\n\nEDITOR BRIEF\n\nProject:\n{payload.project_name}\n\nVideo type:\n{payload.video_type}\n\nDuration:\n{payload.target_duration_seconds} seconds\n\nMood:\n{payload.mood}\n\nPace:\n{payload.pace}\n\nVocals:\n{payload.vocal_style}\n\nStructure:\n{payload.structure_preference}\n\nCreative intent:\n{payload.creative_intent}\n"""
+    prompt = f"""
+    You are Nova, the music-discovery intelligence inside
+    Syncora, a tool for video editors.
+
+    Your job is to translate an editor's creative brief into
+    a musically coherent retrieval profile.
+
+    You must carefully separate:
+
+    1. SEARCHABLE MUSICAL IDENTITY
+    2. DESCRIPTIVE SOUND / CREATIVE INTENT
+
+    These are related, but they are NOT interchangeable.
+
+
+    =======================================================
+    1. RETRIEVAL TAGS
+    =======================================================
+
+    Produce exactly 6 established music tags suitable for
+    searching Last.fm.
+
+    Retrieval tags determine which musical neighborhood
+    Nova searches, so precision matters.
+
+    TAG COMPOSITION:
+
+    - Exactly 4 or 5 of the 6 tags should be genres,
+    subgenres, or established musical styles.
+    - At most 1 or 2 tags may be broader established
+    musical mood, texture, or energy tags.
+    - Order tags from strongest and most specific to
+    broader supporting tags.
+
+    ANCHOR-FAMILY RULE:
+
+    - Before choosing the six tags, silently determine the
+    single strongest musical family suggested by the
+    brief.
+    - The first 3 retrieval tags must establish that
+    musical family.
+    - Tags 4 through 6 must either:
+        a) belong to that same family,
+        b) be a clearly adjacent style, or
+        c) be a broader umbrella/tag that plausibly
+        contains or describes the first three.
+    - Do NOT use the final tags to introduce an unrelated
+    second musical family merely because it matches the
+    project's visual aesthetic.
+    - If two musical families are both plausible but the
+    brief does not explicitly request contrast, choose
+    the better-supported family and stay within it.
+
+    Examples:
+
+    COHERENT:
+    minimal techno
+    deep house
+    tech house
+    electronic
+    house
+    downtempo
+
+    COHERENT:
+    synthwave
+    chillwave
+    dream pop
+    electronic
+    atmospheric
+    downtempo
+
+    COHERENT:
+    indie folk
+    singer-songwriter
+    acoustic
+    folk
+    slowcore
+    melancholic
+
+    INCOHERENT:
+    minimal techno
+    deep house
+    progressive house
+    electronic
+    modern classical
+    ambient
+
+    INCOHERENT:
+    industrial
+    breakcore
+    drum and bass
+    electronic
+    indie folk
+    dream pop
+
+    The incoherent examples fail because the final tags
+    introduce a substantially different musical family
+    without explicit evidence that the editor wants a
+    cross-genre or contrasting soundtrack.
+
+    EVIDENCE RULES:
+
+    - Prefer information that describes the MUSIC itself:
+    mood, pace, vocals, structure, instrumentation,
+    rhythm, energy, texture, or explicitly requested genre.
+    - Treat video type and project subject as CONTEXT, not
+    direct genre evidence.
+    - Creative visual language may influence the desired
+    sound, but it must not automatically become a genre.
+    - Do not infer a niche genre merely because its cultural
+    associations match the visuals.
+    - Do not over-specialize when the brief does not provide
+    enough musical evidence. Prefer a broader credible
+    style over an unsupported niche subgenre.
+
+    Examples of INVALID reasoning:
+
+    "luxury" -> modern classical
+    "premium" -> ambient
+    "cars" -> synthwave
+    "motorsport" -> industrial
+    "cinematic video" -> cinematic music
+    "nighttime" -> darkwave
+
+    Those genres MAY still be correct, but only when other
+    musical evidence in the brief supports them.
+
+    Examples of VALID musical evidence:
+
+    dreamy + electronic texture + smooth rhythm
+        -> dream pop / chillwave / synthwave may be plausible
+
+    fast + aggressive + heavily rhythmic + instrumental
+        -> drum and bass / industrial / breakcore may be plausible
+
+    soft + intimate vocals + acoustic texture + slow build
+        -> indie folk / singer-songwriter / acoustic may be plausible
+
+    Before returning the final JSON, silently validate the six retrieval tags as a SET:
+
+    1. Do the first three establish a recognizable musical
+    family?
+    2. Can every remaining tag be reasonably connected to
+    that family?
+    3. Did any tag enter only because of the visual subject,
+    luxury level, setting, editing style, or aesthetic?
+    4. Would searching all six tags retrieve substantially
+    overlapping kinds of music rather than unrelated
+    catalogs?
+
+    If one tag breaks the musical neighborhood, remove it
+    and replace it with a more coherent adjacent or broader
+    music tag before returning the JSON.
+
+    Then validate each tag individually:
+
+    - Does it describe music rather than the video?
+    - Is it a useful established Last.fm search concept?
+    - Is there musical evidence for it?
+    - Is it coherent with the anchor family?
+
+    If the answer to #1 or #3 is no, move that idea into
+    semantic_traits instead.
+
+    DO NOT use:
+
+    - invented aesthetic phrases
+    - project subjects
+    - editing terminology
+    - camera terminology
+    - visual styles presented as music genres
+    - extremely niche genres unsupported by the brief
+
+    Bad retrieval tags:
+
+    "neon ambiance"
+    "night drive music"
+    "luxury soundtrack"
+    "cinematic car edit"
+    "premium atmosphere"
+    "city lights soundtrack"
+
+    Good retrieval tags can include established terms such as:
+
+    synthwave
+    dream pop
+    chillwave
+    electropop
+    darkwave
+    shoegaze
+    downtempo
+    indie pop
+    indie folk
+    deep house
+    tech house
+    drum and bass
+    industrial
+    electronic
+    alternative
+    acoustic
+    atmospheric
+
+    Do NOT copy these examples unless they actually fit the
+    editor's brief.
+
+
+    =======================================================
+    2. SEMANTIC TRAITS
+    =======================================================
+
+    Produce exactly 4 short descriptive qualities describing
+    the desired SOUND and musical development.
+
+    These are used for semantic embedding similarity and are
+    NOT sent to Last.fm as retrieval searches.
+
+    Semantic traits are the correct place for aesthetic,
+    emotional, textural, cinematic, visual-adjacent, and
+    movement-oriented ideas.
+
+    They may describe:
+
+    - atmosphere
+    - sonic texture
+    - perceived polish
+    - emotional character
+    - rhythmic feel
+    - momentum
+    - restraint
+    - intensity
+    - build
+    - payoff
+    - vocal character
+    - sense of space
+    - elegance or roughness
+
+    Examples:
+
+    "neon nighttime atmosphere"
+    "dreamy electronic texture"
+    "gradual energetic build"
+    "soft emotional vocals"
+    "restrained upscale polish"
+    "precise rhythmic movement"
+
+    Keep each trait concise.
+
+
+    =======================================================
+    INPUT PRIORITY
+    =======================================================
+
+    When fields appear to conflict, use this priority:
+
+    1. Explicit musical requirements in creative intent
+    2. Mood
+    3. Pace
+    4. Vocal preference
+    5. Structure preference
+    6. Video type
+    7. Project name
+
+    Video type and project name provide situational context
+    but must NEVER be the sole justification for a genre.
+
+
+    =======================================================
+    GENERAL RULES
+    =======================================================
+
+    - Return valid JSON only.
+    - Do not use Markdown.
+    - Do not use code fences.
+    - Do not recommend songs.
+    - Do not recommend artists.
+    - Do not explain your reasoning.
+    - Do not output your internal checks.
+    - Keep everything concise.
+
+    Return exactly this JSON shape:
+
+    {{
+        "retrieval_tags": [
+            "tag1",
+            "tag2",
+            "tag3",
+            "tag4",
+            "tag5",
+            "tag6"
+        ],
+
+        "semantic_traits": [
+            "trait1",
+            "trait2",
+            "trait3",
+            "trait4"
+        ],
+
+        "summary":
+            "one short sentence describing the desired music",
+
+        "energy":
+            "one short description",
+
+        "vocal_preference":
+            "one short description"
+    }}
+
+    EDITOR BRIEF
+
+    Project name:
+    {payload.project_name}
+
+    Video type:
+    {payload.video_type}
+
+    Target duration:
+    {payload.target_duration_seconds} seconds
+
+    Mood:
+    {payload.mood}
+
+    Pace:
+    {payload.pace}
+
+    Vocals:
+    {payload.vocal_style}
+
+    Structure:
+    {payload.structure_preference}
+
+    Creative intent:
+    {payload.creative_intent}
+    """
+
     try:
-        completion = create_llm_completion(model=QWEN_MODEL_ID, messages=[{'role': 'system', 'content': "You are Nova, Syncora's music-discovery assistant. Return concise valid JSON only."}, {'role': 'user', 'content': prompt}], temperature=0.25, top_p=0.8, max_tokens=400)
+        completion = create_llm_completion(model=QWEN_MODEL_ID, messages=[{'role': 'system', 'content': "You are Nova, Syncora's music-discovery assistant. "
+            "Translate creative briefs into one coherent musical "
+            "retrieval neighborhood for Last.fm. The first three "
+            "retrieval tags establish an anchor musical family; "
+            "remaining tags must stay within, adjacent to, or "
+            "broaden that family unless the editor explicitly "
+            "requests stylistic contrast. Keep visual and "
+            "aesthetic concepts in semantic traits unless they "
+            "have independent musical support. Return concise "
+            "valid JSON only."},
+        {'role': 'user', 'content': prompt}], temperature=0.25, top_p=0.8, max_tokens=400)
     except Exception as error:
-        error_name = type(error).__name__
-        if 'Timeout' in error_name or 'timeout' in str(error).lower():
-            raise HTTPException(status_code=504, detail={'error': "Nova's Qwen request timed out.", 'stage': 'qwen_profile', 'message': 'LM Studio did not complete the profile generation within the configured timeout.', 'model': QWEN_MODEL_ID, 'build': BUILD_ID})
-        raise HTTPException(status_code=502, detail={'error': 'Nova could not reach Qwen.', 'stage': 'qwen_profile', 'message': str(error), 'model': QWEN_MODEL_ID, 'build': BUILD_ID})
+        error_name = (
+            type(error).__name__
+        )
+
+        error_text = str(
+            error
+        )
+
+        error_text_lower = (
+            error_text.casefold()
+        )
+
+        print(
+            '[NOVA AI ERROR] '
+            f'provider={LLM_PROVIDER} '
+            f'{error_name}: {error_text}'
+        )
+
+        if (
+            'Timeout' in error_name
+            or
+            'timeout' in error_text_lower
+        ):
+            provider_message = (
+                (
+                    'Hugging Face inference did not finish '
+                    'the Nova profile within the configured '
+                    'timeout.'
+                )
+                if LLM_PROVIDER == 'huggingface'
+                else
+                (
+                    'LM Studio did not complete the Nova '
+                    'profile within the configured timeout.'
+                )
+            )
+
+            raise HTTPException(
+                status_code=504,
+                detail={
+                    'error':
+                        (
+                            "Nova's AI profile generation "
+                            "timed out."
+                        ),
+
+                    'message':
+                        provider_message,
+
+                    'stage':
+                        'qwen_profile',
+
+                    'retryable':
+                        True,
+
+                    'provider':
+                        LLM_PROVIDER,
+
+                    'model':
+                        QWEN_MODEL_ID,
+
+                    'build':
+                        BUILD_ID,
+                }
+            )
+
+        provider_message = (
+            (
+                'The cloud AI provider could not complete '
+                'Nova profile generation. Try again in a '
+                'moment.'
+            )
+            if LLM_PROVIDER == 'huggingface'
+            else
+            (
+                'The local AI model could not complete '
+                'Nova profile generation. Make sure '
+                'LM Studio and the Nova model are running.'
+            )
+        )
+
+        raise HTTPException(
+            status_code=502,
+            detail={
+                'error':
+                    (
+                        'Nova could not complete '
+                        'AI profile generation.'
+                    ),
+
+                'message':
+                    provider_message,
+
+                'stage':
+                    'qwen_profile',
+
+                'retryable':
+                    True,
+
+                'provider':
+                    LLM_PROVIDER,
+
+                'model':
+                    QWEN_MODEL_ID,
+
+                'build':
+                    BUILD_ID,
+            }
+        )
+
+    if not completion.choices:
+        raise HTTPException(
+            status_code=502,
+            detail={
+                'error':
+                    (
+                        f'{LLM_PROVIDER_LABEL} returned '
+                        'zero Nova choices.'
+                    ),
+
+                'stage':
+                    'nova_qwen_validation',
+
+                'retryable':
+                    True,
+
+                'provider':
+                    LLM_PROVIDER,
+
+                'model':
+                    QWEN_MODEL_ID,
+
+                'build':
+                    BUILD_ID,
+            }
+        )
+
     if not completion.choices:
         raise HTTPException(status_code=502, detail={'error': 'LM Studio returned zero Qwen choices.', 'stage': 'nova_qwen_validation', 'retryable': True, 'model': QWEN_MODEL_ID, 'build': BUILD_ID})
     raw = completion.choices[0].message.content
@@ -2125,22 +2845,17 @@ def build_candidate_embedding_document(
             'top_tags',
             []
         )[:12]
-        if tag.get('name')
+        if tag.get(
+            'name'
+        )
     ]
 
     if not tag_names:
-        tag_names = [
-            match['tag']
-            for match
-            in candidate.get(
-                'retrieval_matches',
-                []
-            )
-        ]
+        return None
 
     document_text = (
         'Candidate music profile. '
-        'Music tags and qualities: '
+        'Track-specific music tags and qualities: '
         + ', '.join(
             tag_names
         )
@@ -2167,43 +2882,813 @@ def cosine_similarity(vector_a, vector_b):
         return 0.0
     return dot_product / (magnitude_a * magnitude_b)
 
-def attach_semantic_similarity(profile, active_retrieval_tags, candidates):
-    query = build_embedding_query(profile, active_retrieval_tags)
-    documents = [build_candidate_embedding_document(candidate) for candidate in candidates]
-    texts = [query, *documents]
-    try:
-        vectors = create_embedding_vectors(
-            texts
+def attach_semantic_similarity(
+    profile,
+    active_retrieval_tags,
+    candidates
+):
+    query = build_embedding_query(
+        profile,
+        active_retrieval_tags
+    )
+
+    semantic_candidates = []
+
+    eligible_candidates = []
+    eligible_documents = []
+
+    for candidate in candidates:
+        candidate_copy = dict(
+            candidate
         )
-        
-        if len(vectors) != len(texts):
-            raise ValueError('Embedding model returned an unexpected vector count.')
-        query_vector = vectors[0]
-        semantic_candidates = []
-        for candidate, vector in zip(candidates, vectors[1:]):
-            candidate_copy = dict(candidate)
-            candidate_copy['semantic_similarity'] = cosine_similarity(query_vector, vector)
-            semantic_candidates.append(candidate_copy)
-        return (semantic_candidates, True, None)
+
+        candidate_copy[
+            'semantic_similarity'
+        ] = None
+
+        semantic_candidates.append(
+            candidate_copy
+        )
+
+        document = (
+            build_candidate_embedding_document(
+                candidate
+            )
+        )
+
+        if not document:
+            continue
+
+        eligible_candidates.append(
+            len(
+                semantic_candidates
+            )
+            -
+            1
+        )
+
+        eligible_documents.append(
+            document
+        )
+
+    if not eligible_documents:
+        warning = {
+            'stage':
+                'embedding_similarity',
+
+            'message':
+                (
+                    'Nova had no track-specific '
+                    'metadata suitable for semantic '
+                    'candidate scoring. Last.fm '
+                    'evidence was used instead.'
+                ),
+        }
+
+        return (
+            semantic_candidates,
+            False,
+            warning,
+        )
+
+    texts = [
+        query,
+        *eligible_documents,
+    ]
+
+    try:
+        vectors = (
+            create_embedding_vectors(
+                texts
+            )
+        )
+
+        if (
+            len(
+                vectors
+            )
+            !=
+            len(
+                texts
+            )
+        ):
+            raise ValueError(
+                (
+                    'Embedding model returned '
+                    'an unexpected vector count.'
+                )
+            )
+
+        query_vector = (
+            vectors[0]
+        )
+
+        for (
+            candidate_index,
+            vector,
+        ) in zip(
+            eligible_candidates,
+            vectors[1:],
+        ):
+            semantic_candidates[
+                candidate_index
+            ][
+                'semantic_similarity'
+            ] = (
+                cosine_similarity(
+                    query_vector,
+                    vector,
+                )
+            )
+
+        return (
+            semantic_candidates,
+            True,
+            None,
+        )
+
     except Exception as error:
-        fallback_candidates = []
-        for candidate in candidates:
-            candidate_copy = dict(candidate)
-            candidate_copy['semantic_similarity'] = None
-            fallback_candidates.append(candidate_copy)
-        warning = {'stage': 'embedding_similarity', 'message': 'Semantic embeddings were unavailable. Nova used Last.fm evidence only.', 'technical_error': str(error)}
-        return (fallback_candidates, False, warning)
+        warning = {
+            'stage':
+                'embedding_similarity',
 
-def calibrate_semantic_similarity(similarity):
-    if similarity is None:
+            'message':
+                (
+                    'Semantic embeddings were '
+                    'unavailable. Nova used '
+                    'Last.fm evidence only.'
+                ),
+
+            'technical_error':
+                str(
+                    error
+                ),
+        }
+
+        for candidate in semantic_candidates:
+            candidate[
+                'semantic_similarity'
+            ] = None
+
+        return (
+            semantic_candidates,
+            False,
+            warning,
+        )
+
+def build_nova_calibration_debug(
+    scored_candidates
+):
+    candidate_rows = []
+    similarities = []
+
+    for candidate in scored_candidates:
+        similarity = candidate.get(
+            'semantic_similarity'
+        )
+
+        if isinstance(
+            similarity,
+            (int, float),
+        ):
+            similarities.append(
+                float(
+                    similarity
+                )
+            )
+
+        score_breakdown = (
+            candidate.get(
+                'score_breakdown'
+            )
+            or
+            {}
+        )
+
+        candidate_rows.append(
+            {
+                'title':
+                    candidate.get(
+                        'title'
+                    ),
+
+                'artist':
+                    candidate.get(
+                        'artist'
+                    ),
+
+                'match_score':
+                    candidate.get(
+                        'match_score'
+                    ),
+
+                'semantic_similarity':
+                    candidate.get(
+                        'semantic_similarity'
+                    ),
+
+                'semantic_fit':
+                    candidate.get(
+                        'semantic_fit'
+                    ),
+
+                'semantic_points':
+                    score_breakdown.get(
+                        'semantic_fit'
+                    ),
+
+                'lastfm_tag_points':
+                    score_breakdown.get(
+                        'lastfm_tag_evidence'
+                    ),
+
+                'lastfm_retrieval_points':
+                    score_breakdown.get(
+                        'lastfm_retrieval'
+                    ),
+
+                'matched_tags':
+                    candidate.get(
+                        'matched_nova_tags'
+                    )
+                    or
+                    [],
+            }
+        )
+
+    candidate_rows.sort(
+        key=lambda candidate:
+            (
+                candidate.get(
+                    'semantic_similarity'
+                )
+                if isinstance(
+                    candidate.get(
+                        'semantic_similarity'
+                    ),
+                    (int, float),
+                )
+                else
+                -1.0
+            ),
+        reverse=True,
+    )
+
+    distribution = {
+        'count':
+            len(
+                similarities
+            ),
+
+        'minimum':
+            None,
+
+        'maximum':
+            None,
+
+        'mean':
+            None,
+
+        'median':
+            None,
+
+        'spread':
+            None,
+    }
+
+    if similarities:
+        ordered = sorted(
+            similarities
+        )
+
+        count = len(
+            ordered
+        )
+
+        mean = (
+            sum(
+                ordered
+            )
+            /
+            count
+        )
+
+        if count % 2:
+            median = ordered[
+                count // 2
+            ]
+
+        else:
+            middle = (
+                count // 2
+            )
+
+            median = (
+                ordered[
+                    middle - 1
+                ]
+                +
+                ordered[
+                    middle
+                ]
+            ) / 2
+
+        minimum = ordered[0]
+        maximum = ordered[-1]
+
+        distribution = {
+            'count':
+                count,
+
+            'minimum':
+                round(
+                    minimum,
+                    4,
+                ),
+
+            'maximum':
+                round(
+                    maximum,
+                    4,
+                ),
+
+            'mean':
+                round(
+                    mean,
+                    4,
+                ),
+
+            'median':
+                round(
+                    median,
+                    4,
+                ),
+
+            'spread':
+                round(
+                    maximum
+                    -
+                    minimum,
+                    4,
+                ),
+        }
+
+    return {
+        'embedding_provider':
+            EMBEDDING_PROVIDER,
+
+        'embedding_model':
+            EMBEDDING_MODEL_ID,
+
+        'current_calibration':
+            get_semantic_calibration_profile(),
+
+        'distribution':
+            distribution,
+
+        'candidates':
+            candidate_rows,
+    }
+
+def calibrate_semantic_similarity(
+    similarity
+):
+    if not isinstance(
+        similarity,
+        (int, float),
+    ):
         return 0.0
-    midpoint = 0.78
-    steepness = 30.0
-    exponent = -steepness * (similarity - midpoint)
-    exponent = min(60.0, max(-60.0, exponent))
-    return 1.0 / (1.0 + math.exp(exponent))
 
-def score_enriched_candidates(active_retrieval_tags, enriched_candidates, semantic_available):
+    profile = (
+        get_semantic_calibration_profile()
+    )
+
+    floor = float(
+        profile[
+            'floor'
+        ]
+    )
+
+    midpoint = float(
+        profile[
+            'midpoint'
+        ]
+    )
+
+    ceiling = float(
+        profile[
+            'ceiling'
+        ]
+    )
+
+    steepness = float(
+        profile[
+            'steepness'
+        ]
+    )
+
+    similarity = float(
+        similarity
+    )
+
+    if similarity <= floor:
+        return 0.0
+
+    if similarity >= ceiling:
+        return 1.0
+
+    def sigmoid(
+        value
+    ):
+        exponent = (
+            -steepness
+            *
+            (
+                value
+                -
+                midpoint
+            )
+        )
+
+        exponent = min(
+            60.0,
+            max(
+                -60.0,
+                exponent,
+            ),
+        )
+
+        return (
+            1.0
+            /
+            (
+                1.0
+                +
+                math.exp(
+                    exponent
+                )
+            )
+        )
+
+    raw_fit = sigmoid(
+        similarity
+    )
+
+    floor_fit = sigmoid(
+        floor
+    )
+
+    ceiling_fit = sigmoid(
+        ceiling
+    )
+
+    usable_range = (
+        ceiling_fit
+        -
+        floor_fit
+    )
+
+    if usable_range <= 0:
+        return 0.0
+
+    calibrated_fit = (
+        (
+            raw_fit
+            -
+            floor_fit
+        )
+        /
+        usable_range
+    )
+
+    return max(
+        0.0,
+        min(
+            1.0,
+            calibrated_fit,
+        ),
+    )
+
+def classify_requested_vocal_mode(
+    vocal_style
+):
+    normalized = normalize_tag(
+        str(
+            vocal_style
+            or
+            ''
+        )
+    )
+
+    if not normalized:
+        return 'neutral'
+
+    if (
+        'instrumental'
+        in normalized
+        or
+        'no vocal'
+        in normalized
+        or
+        'without vocal'
+        in normalized
+    ):
+        return 'instrumental'
+
+    if (
+        'minimal'
+        in normalized
+        or
+        'sparse vocal'
+        in normalized
+        or
+        'light vocal'
+        in normalized
+        or
+        'few vocal'
+        in normalized
+    ):
+        return 'minimal'
+
+    if (
+        'vocal'
+        in normalized
+        or
+        'singer'
+        in normalized
+        or
+        'lyric'
+        in normalized
+    ):
+        return 'vocal'
+
+    return 'neutral'
+
+
+def classify_candidate_vocal_state(
+    top_tags
+):
+    instrumental_tags = []
+    strong_vocal_tags = []
+    soft_vocal_tags = []
+
+    soft_vocal_markers = {
+        'pop',
+        'indie pop',
+        'dance pop',
+        'electropop',
+        'synthpop',
+        'pop rock',
+        'folk',
+        'indie folk',
+        'punk',
+        'soul',
+    }
+
+    for tag in (
+        top_tags
+        or
+        []
+    ):
+        tag_name = str(
+            tag.get(
+                'name',
+                ''
+            )
+            or
+            ''
+        )
+
+        normalized = normalize_tag(
+            tag_name
+        )
+
+        if not normalized:
+            continue
+
+        try:
+            count = float(
+                tag.get(
+                    'count',
+                    0
+                )
+                or
+                0
+            )
+
+        except (
+            TypeError,
+            ValueError,
+        ):
+            count = 0.0
+
+        words = set(
+            normalized.split()
+        )
+
+        if (
+            'instrumental'
+            in normalized
+        ):
+            instrumental_tags.append(
+                tag_name
+            )
+
+        strong_vocal = (
+            'vocal'
+            in normalized
+            or
+            'singer songwriter'
+            in normalized
+            or
+            'rap'
+            in words
+            or
+            'rapper'
+            in words
+            or
+            'hip hop'
+            in normalized
+            or
+            normalized
+            in {
+                'k pop',
+                'kpop',
+                'j pop',
+                'jpop',
+                'r b',
+                'rnb',
+                'a cappella',
+                'spoken word',
+            }
+        )
+
+        if strong_vocal:
+            strong_vocal_tags.append(
+                tag_name
+            )
+
+            continue
+
+        if (
+            normalized
+            in soft_vocal_markers
+            and
+            count >= 5
+        ):
+            soft_vocal_tags.append(
+                tag_name
+            )
+
+    if (
+        instrumental_tags
+        and
+        strong_vocal_tags
+    ):
+        state = 'mixed'
+
+    elif instrumental_tags:
+        state = 'instrumental'
+
+    elif strong_vocal_tags:
+        state = 'vocal'
+
+    elif soft_vocal_tags:
+        state = 'likely_vocal'
+
+    else:
+        state = 'unknown'
+
+    return {
+        'state':
+            state,
+
+        'instrumental_evidence':
+            instrumental_tags,
+
+        'strong_vocal_evidence':
+            strong_vocal_tags,
+
+        'soft_vocal_evidence':
+            soft_vocal_tags,
+    }
+
+
+def evaluate_vocal_preference(
+    vocal_style,
+    top_tags
+):
+    requested_mode = (
+        classify_requested_vocal_mode(
+            vocal_style
+        )
+    )
+
+    evidence = (
+        classify_candidate_vocal_state(
+            top_tags
+        )
+    )
+
+    candidate_state = (
+        evidence[
+            'state'
+        ]
+    )
+
+    penalty = 0.0
+
+    if (
+        requested_mode
+        ==
+        'instrumental'
+    ):
+        if (
+            candidate_state
+            ==
+            'vocal'
+        ):
+            penalty = 14.0
+
+        elif (
+            candidate_state
+            ==
+            'likely_vocal'
+        ):
+            penalty = 8.0
+
+        elif (
+            candidate_state
+            ==
+            'mixed'
+        ):
+            penalty = 4.0
+
+    elif (
+        requested_mode
+        ==
+        'minimal'
+    ):
+        if (
+            candidate_state
+            ==
+            'vocal'
+        ):
+            penalty = 10.0
+
+        elif (
+            candidate_state
+            ==
+            'likely_vocal'
+        ):
+            penalty = 5.0
+
+        elif (
+            candidate_state
+            ==
+            'mixed'
+        ):
+            penalty = 2.0
+
+    elif (
+        requested_mode
+        ==
+        'vocal'
+    ):
+        if (
+            candidate_state
+            ==
+            'instrumental'
+        ):
+            penalty = 10.0
+
+    return {
+        'requested_mode':
+            requested_mode,
+
+        'candidate_state':
+            candidate_state,
+
+        'penalty':
+            penalty,
+
+        'instrumental_evidence':
+            evidence[
+                'instrumental_evidence'
+            ],
+
+        'strong_vocal_evidence':
+            evidence[
+                'strong_vocal_evidence'
+            ],
+
+        'soft_vocal_evidence':
+            evidence[
+                'soft_vocal_evidence'
+            ],
+    }
+
+def score_enriched_candidates(active_retrieval_tags, enriched_candidates, semantic_available, vocal_style=''):
     desired_tags = active_retrieval_tags
     importance_weights = [1.0, 0.94, 0.88, 0.82, 0.76, 0.7]
     total_importance = sum(importance_weights[:len(desired_tags)])
@@ -2255,12 +3740,229 @@ def score_enriched_candidates(active_retrieval_tags, enriched_candidates, semant
             rank = retrieval['rank']
             rank_quality = max(0.1, (11 - rank) / 10)
             retrieval_evidence += importance * rank_quality
-        retrieval_points = min(retrieval_max_points, retrieval_evidence / 1.4 * retrieval_max_points)
-        score = tag_evidence_points + semantic_points + retrieval_points
+
+        retrieval_points = min(
+            retrieval_max_points,
+            retrieval_evidence
+            /
+            1.4
+            *
+            retrieval_max_points
+        )
+
+        vocal_constraint = (
+            evaluate_vocal_preference(
+                vocal_style,
+                top_tags
+            )
+        )
+
+        vocal_penalty = float(
+            vocal_constraint[
+                'penalty'
+            ]
+        )
+
+        base_score = (
+            tag_evidence_points
+            +
+            semantic_points
+            +
+            retrieval_points
+        )
+
+        score = (
+            base_score
+            -
+            vocal_penalty
+        )
         score = int(round(min(99, max(0, score))))
-        scored.append({'title': candidate['title'], 'artist': candidate['artist'], 'match_score': score, 'semantic_similarity': round(raw_semantic_similarity, 4) if raw_semantic_similarity is not None else None, 'semantic_fit': round(semantic_fit, 4) if semantic_available else None, 'score_breakdown': {'lastfm_tag_evidence': round(tag_evidence_points, 2), 'semantic_fit': round(semantic_points, 2), 'lastfm_retrieval': round(retrieval_points, 2)}, 'matched_nova_tags': [match['nova_tag'] for match in matched_desired], 'match_evidence': matched_desired, 'retrieval_matches': candidate['retrieval_matches'], 'top_lastfm_tags': top_tags[:8], 'lastfm_url': candidate['lastfm_url'], 'mbid': candidate['mbid']})
+        scored.append({'title': candidate['title'], 'artist': candidate['artist'], 'match_score': score, 'semantic_similarity': round(raw_semantic_similarity, 4) if raw_semantic_similarity is not None else None, 'semantic_fit': round(semantic_fit, 4) if semantic_available else None, 'score_breakdown': {
+    'lastfm_tag_evidence':
+        round(
+            tag_evidence_points,
+            2
+        ),
+
+    'semantic_fit':
+        round(
+            semantic_points,
+            2
+        ),
+
+    'lastfm_retrieval':
+        round(
+            retrieval_points,
+            2
+        ),
+
+    'vocal_preference_penalty':
+        round(
+            vocal_penalty,
+            2
+        ),
+},
+
+'vocal_constraint':
+    vocal_constraint, 'matched_nova_tags': [match['nova_tag'] for match in matched_desired], 'match_evidence': matched_desired, 'retrieval_matches': candidate['retrieval_matches'], 'top_lastfm_tags': top_tags[:8], 'lastfm_url': candidate['lastfm_url'], 'mbid': candidate['mbid']})
     scored.sort(key=lambda item: (item['match_score'], item['semantic_similarity'] or 0, len(item['matched_nova_tags'])), reverse=True)
     return (scored, {'lastfm_tag_evidence': round(tag_max_points, 2), 'semantic_similarity': round(semantic_max_points, 2), 'lastfm_retrieval': round(retrieval_max_points, 2)})
+
+def build_nova_recommendation_reason(
+    candidate
+):
+    matched_tags = (
+        candidate.get(
+            'matched_nova_tags'
+        )
+        or
+        []
+    )
+
+    semantic_similarity = (
+        candidate.get(
+            'semantic_similarity'
+        )
+    )
+
+    score_breakdown = (
+        candidate.get(
+            'score_breakdown'
+        )
+        or
+        {}
+    )
+
+    try:
+        vocal_penalty = float(
+            score_breakdown.get(
+                'vocal_preference_penalty',
+                0.0,
+            )
+            or
+            0.0
+        )
+
+    except (
+        TypeError,
+        ValueError,
+    ):
+        vocal_penalty = 0.0
+
+    vocal_constraint = (
+        candidate.get(
+            'vocal_constraint'
+        )
+        or
+        {}
+    )
+
+    requested_mode = (
+        vocal_constraint.get(
+            'requested_mode'
+        )
+    )
+
+    if (
+        matched_tags
+        and
+        semantic_similarity
+        is not None
+    ):
+        reason = (
+            "Last.fm's track-specific tags matched "
+            "Nova's retrieval profile on "
+            +
+            ', '.join(
+                matched_tags
+            )
+            +
+            f", with semantic similarity "
+            f"{semantic_similarity:.2f}."
+        )
+
+    elif matched_tags:
+        reason = (
+            "Last.fm's track-specific tags matched "
+            "Nova's retrieval profile on "
+            +
+            ', '.join(
+                matched_tags
+            )
+            +
+            "."
+        )
+
+    elif (
+        semantic_similarity
+        is not None
+    ):
+        reason = (
+            "The track's Last.fm music profile "
+            "showed semantic compatibility with "
+            "Nova's desired sound "
+            f"({semantic_similarity:.2f})."
+        )
+
+    else:
+        reason = (
+            "The track ranked strongly in Nova's "
+            "Last.fm retrieval results."
+        )
+
+    if vocal_penalty <= 0:
+        return reason
+
+    if (
+        requested_mode
+        ==
+        'instrumental'
+    ):
+        adjustment = (
+            "Available Last.fm metadata also "
+            "suggests vocal content that may "
+            "conflict with the requested "
+            "instrumental preference, so Nova "
+            "reduced the score."
+        )
+
+    elif (
+        requested_mode
+        ==
+        'minimal'
+    ):
+        adjustment = (
+            "Available Last.fm metadata suggests "
+            "a more vocal-forward track than "
+            "requested, so Nova reduced the score."
+        )
+
+    elif (
+        requested_mode
+        ==
+        'vocal'
+    ):
+        adjustment = (
+            "Available Last.fm metadata suggests "
+            "the track may conflict with the "
+            "requested vocal preference, so Nova "
+            "reduced the score."
+        )
+
+    else:
+        adjustment = (
+            "Nova also applied a vocal-preference "
+            "adjustment based on the available "
+            "Last.fm metadata."
+        )
+
+    return (
+        reason
+        +
+        ' '
+        +
+        adjustment
+    )
 
 def select_top_three(candidates):
     if len(candidates) < 3:
@@ -2284,16 +3986,18 @@ def select_top_three(candidates):
                 break
     recommendations = []
     for rank, candidate in enumerate(selected, start=1):
-        matched_tags = candidate['matched_nova_tags']
-        semantic_similarity = candidate['semantic_similarity']
-        if matched_tags and semantic_similarity is not None:
-            reason = "Last.fm's track-specific tags matched Nova's retrieval profile on " + ', '.join(matched_tags) + f', with semantic similarity {semantic_similarity:.2f}.'
-        elif matched_tags:
-            reason = "Last.fm's track-specific tags matched Nova's retrieval profile on " + ', '.join(matched_tags) + '.'
-        elif semantic_similarity is not None:
-            reason = f"The track's Last.fm music profile showed semantic compatibility with Nova's desired sound ({semantic_similarity:.2f})."
-        else:
-            reason = "The track ranked strongly in Nova's Last.fm retrieval results."
+        matched_tags = (
+            candidate[
+                'matched_nova_tags'
+            ]
+        )
+
+        reason = (
+            build_nova_recommendation_reason(
+                candidate
+            )
+        )
+        
         recommendations.append({'rank': rank, 'title': candidate['title'], 'artist': candidate['artist'], 'match_score': candidate['match_score'], 'reason': reason, 'semantic_similarity': candidate['semantic_similarity'], 'semantic_fit': candidate['semantic_fit'], 'score_breakdown': candidate['score_breakdown'], 'matched_tags': matched_tags, 'top_lastfm_tags': candidate['top_lastfm_tags'], 'match_evidence': candidate['match_evidence'], 'lastfm_url': candidate['lastfm_url'], 'mbid': candidate['mbid']})
     if len(recommendations) != 3:
         raise HTTPException(status_code=500, detail={'error': "Nova's final selection did not contain exactly three songs.", 'stage': 'final_selection', 'recommendation_count': len(recommendations), 'build': BUILD_ID})
@@ -3726,7 +5430,22 @@ async def test_cyanite():
 @app.post('/nova/generate')
 async def nova_generate(payload: NovaRequest):
     start = time.perf_counter()
-    profile = await asyncio.to_thread(create_nova_profile, payload)
+    profile = await asyncio.to_thread(
+    create_nova_profile,
+    payload
+)
+
+    profile = (
+        apply_nova_explicit_constraints(
+            profile,
+            payload,
+        )
+    )
+
+    cache_nova_profile(
+        payload,
+        profile
+    )
     cache_nova_profile(payload, profile)
     elapsed_ms = round((time.perf_counter() - start) * 1000)
     return {'build': BUILD_ID, 'model': QWEN_MODEL_ID, 'profile_source': 'qwen', 'timing_ms': {'qwen_profile': elapsed_ms}, 'profile': profile}
@@ -3743,6 +5462,14 @@ async def nova_recommend(payload: NovaRequest):
         profile_source = 'qwen'
         profile = await asyncio.to_thread(create_nova_profile, payload)
         cache_nova_profile(payload, profile)
+
+    profile = (
+        apply_nova_explicit_constraints(
+            profile,
+            payload,
+        )
+    )
+    
     profile_ms = round((time.perf_counter() - profile_start) * 1000)
     search_start = time.perf_counter()
     search_bundle = await search_lastfm_all_usable(profile['retrieval_tags'])
@@ -3764,7 +5491,32 @@ async def nova_recommend(payload: NovaRequest):
     if embedding_warning:
         warnings.append(embedding_warning)
     embedding_ms = round((time.perf_counter() - embedding_start) * 1000)
-    scored, scoring_weights = score_enriched_candidates(active_retrieval_tags, semantic_candidates, semantic_available)
-    recommendations = select_top_three(scored)
+
+    scored, scoring_weights = score_enriched_candidates(
+        active_retrieval_tags,
+        semantic_candidates,
+        semantic_available,
+        payload.vocal_style
+    )
+
+    calibration_debug = (
+        build_nova_calibration_debug(
+            scored
+        )
+    )
+
+    recommendations = select_top_three(
+        scored
+    )
+    
     total_ms = round((time.perf_counter() - total_start) * 1000)
-    return {'build': BUILD_ID, 'qwen_model': QWEN_MODEL_ID, 'embedding_model': EMBEDDING_MODEL_ID, 'mode': 'six-tag-sigmoid-hybrid', 'profile_source': profile_source, 'profile': profile, 'retrieval_debug': {'requested_tags': profile['retrieval_tags'], 'active_tags': active_retrieval_tags, 'dead_tags': search_bundle['dead_tags'], 'failed_queries': search_bundle['failed_queries'], 'candidate_strategy': 'top-2-per-usable-tag'}, 'shortlist_debug': shortlist_debug, 'candidate_count': candidate_count, 'shortlist_count': len(shortlist), 'semantic_available': semantic_available, 'timing_ms': {'qwen_profile': profile_ms, 'lastfm_initial_search': search_ms, 'lastfm_enrichment': enrichment_ms, 'embedding_similarity': embedding_ms, 'total': total_ms}, 'scoring_weights': scoring_weights, 'warnings': warnings, 'recommendation_count': len(recommendations), 'recommendations': recommendations}
+    return {'build': BUILD_ID, 'qwen_model': QWEN_MODEL_ID, 'embedding_model': EMBEDDING_MODEL_ID, 'mode': 'six-tag-sigmoid-hybrid', 'profile_source': profile_source, 'profile': profile, 'retrieval_debug': {'requested_tags': profile['retrieval_tags'], 'active_tags': active_retrieval_tags, 'dead_tags': search_bundle['dead_tags'], 'failed_queries': search_bundle['failed_queries'], 'candidate_strategy': 'top-2-per-usable-tag'}, 'shortlist_debug': shortlist_debug, 'candidate_count': candidate_count, 'shortlist_count': len(shortlist), 'semantic_available': semantic_available, 'timing_ms': {'qwen_profile': profile_ms, 'lastfm_initial_search': search_ms, 'lastfm_enrichment': enrichment_ms, 'embedding_similarity': embedding_ms, 'total': total_ms}, 'scoring_weights': scoring_weights, **(
+    {
+        'calibration_debug':
+            calibration_debug
+    }
+
+    if NOVA_DEBUG_RESPONSES
+
+    else {}
+), 'warnings': warnings, 'recommendation_count': len(recommendations), 'recommendations': recommendations}
