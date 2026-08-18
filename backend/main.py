@@ -45,7 +45,7 @@ def get_setting(name, default=None):
     return default
 
 
-BUILD_ID = 'nova-hybrid-0.7.6'
+BUILD_ID = 'nova-hybrid-0.7.7'
 PULSAR_RESOLVER_BUILD_ID = 'pulsar-ytmusic-resolver-0.2.0'
 PULSAR_ANALYSIS_BUILD_ID = 'pulsar-signal-0.5.1'
 
@@ -295,6 +295,71 @@ app.add_middleware(
     allow_methods=['*'],
     allow_headers=['*'],
 )
+
+def apply_nova_explicit_constraints(
+    profile,
+    payload
+):
+    if not isinstance(
+        profile,
+        dict,
+    ):
+        return profile
+
+    adjusted = dict(
+        profile
+    )
+
+    retrieval_tags = list(
+        adjusted.get(
+            'retrieval_tags'
+        )
+        or
+        []
+    )
+
+    requested_vocal_mode = (
+        classify_requested_vocal_mode(
+            payload.vocal_style
+        )
+    )
+
+    if (
+        requested_vocal_mode
+        ==
+        'instrumental'
+    ):
+        already_present = any(
+            normalize_tag(
+                tag
+            )
+            ==
+            'instrumental'
+            for tag
+            in retrieval_tags
+        )
+
+        if not already_present:
+            if len(
+                retrieval_tags
+            ) >= 6:
+                retrieval_tags[
+                    -1
+                ] = 'instrumental'
+
+            else:
+                retrieval_tags.append(
+                    'instrumental'
+                )
+
+    adjusted[
+        'retrieval_tags'
+    ] = clean_string_list(
+        retrieval_tags,
+        6,
+    )
+
+    return adjusted
 
 
 @app.exception_handler(RequestValidationError)
@@ -5190,7 +5255,22 @@ async def test_cyanite():
 @app.post('/nova/generate')
 async def nova_generate(payload: NovaRequest):
     start = time.perf_counter()
-    profile = await asyncio.to_thread(create_nova_profile, payload)
+    profile = await asyncio.to_thread(
+    create_nova_profile,
+    payload
+)
+
+    profile = (
+        apply_nova_explicit_constraints(
+            profile,
+            payload,
+        )
+    )
+
+    cache_nova_profile(
+        payload,
+        profile
+    )
     cache_nova_profile(payload, profile)
     elapsed_ms = round((time.perf_counter() - start) * 1000)
     return {'build': BUILD_ID, 'model': QWEN_MODEL_ID, 'profile_source': 'qwen', 'timing_ms': {'qwen_profile': elapsed_ms}, 'profile': profile}
@@ -5207,6 +5287,14 @@ async def nova_recommend(payload: NovaRequest):
         profile_source = 'qwen'
         profile = await asyncio.to_thread(create_nova_profile, payload)
         cache_nova_profile(payload, profile)
+
+    profile = (
+        apply_nova_explicit_constraints(
+            profile,
+            payload,
+        )
+    )
+    
     profile_ms = round((time.perf_counter() - profile_start) * 1000)
     search_start = time.perf_counter()
     search_bundle = await search_lastfm_all_usable(profile['retrieval_tags'])
