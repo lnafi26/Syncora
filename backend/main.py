@@ -2438,6 +2438,228 @@ def attach_semantic_similarity(profile, active_retrieval_tags, candidates):
         warning = {'stage': 'embedding_similarity', 'message': 'Semantic embeddings were unavailable. Nova used Last.fm evidence only.', 'technical_error': str(error)}
         return (fallback_candidates, False, warning)
 
+def build_nova_calibration_debug(
+    scored_candidates
+):
+    candidate_rows = []
+    similarities = []
+
+    for candidate in scored_candidates:
+        similarity = candidate.get(
+            'semantic_similarity'
+        )
+
+        if isinstance(
+            similarity,
+            (int, float),
+        ):
+            similarities.append(
+                float(
+                    similarity
+                )
+            )
+
+        score_breakdown = (
+            candidate.get(
+                'score_breakdown'
+            )
+            or
+            {}
+        )
+
+        candidate_rows.append(
+            {
+                'title':
+                    candidate.get(
+                        'title'
+                    ),
+
+                'artist':
+                    candidate.get(
+                        'artist'
+                    ),
+
+                'match_score':
+                    candidate.get(
+                        'match_score'
+                    ),
+
+                'semantic_similarity':
+                    candidate.get(
+                        'semantic_similarity'
+                    ),
+
+                'semantic_fit':
+                    candidate.get(
+                        'semantic_fit'
+                    ),
+
+                'semantic_points':
+                    score_breakdown.get(
+                        'semantic_fit'
+                    ),
+
+                'lastfm_tag_points':
+                    score_breakdown.get(
+                        'lastfm_tag_evidence'
+                    ),
+
+                'lastfm_retrieval_points':
+                    score_breakdown.get(
+                        'lastfm_retrieval'
+                    ),
+
+                'matched_tags':
+                    candidate.get(
+                        'matched_nova_tags'
+                    )
+                    or
+                    [],
+            }
+        )
+
+    candidate_rows.sort(
+        key=lambda candidate:
+            (
+                candidate.get(
+                    'semantic_similarity'
+                )
+                if isinstance(
+                    candidate.get(
+                        'semantic_similarity'
+                    ),
+                    (int, float),
+                )
+                else
+                -1.0
+            ),
+        reverse=True,
+    )
+
+    distribution = {
+        'count':
+            len(
+                similarities
+            ),
+
+        'minimum':
+            None,
+
+        'maximum':
+            None,
+
+        'mean':
+            None,
+
+        'median':
+            None,
+
+        'spread':
+            None,
+    }
+
+    if similarities:
+        ordered = sorted(
+            similarities
+        )
+
+        count = len(
+            ordered
+        )
+
+        mean = (
+            sum(
+                ordered
+            )
+            /
+            count
+        )
+
+        if count % 2:
+            median = ordered[
+                count // 2
+            ]
+
+        else:
+            middle = (
+                count // 2
+            )
+
+            median = (
+                ordered[
+                    middle - 1
+                ]
+                +
+                ordered[
+                    middle
+                ]
+            ) / 2
+
+        minimum = ordered[0]
+        maximum = ordered[-1]
+
+        distribution = {
+            'count':
+                count,
+
+            'minimum':
+                round(
+                    minimum,
+                    4,
+                ),
+
+            'maximum':
+                round(
+                    maximum,
+                    4,
+                ),
+
+            'mean':
+                round(
+                    mean,
+                    4,
+                ),
+
+            'median':
+                round(
+                    median,
+                    4,
+                ),
+
+            'spread':
+                round(
+                    maximum
+                    -
+                    minimum,
+                    4,
+                ),
+        }
+
+    return {
+        'embedding_provider':
+            EMBEDDING_PROVIDER,
+
+        'embedding_model':
+            EMBEDDING_MODEL_ID,
+
+        'current_calibration': {
+            'type':
+                'sigmoid',
+
+            'midpoint':
+                0.78,
+
+            'steepness':
+                30.0,
+        },
+
+        'distribution':
+            distribution,
+
+        'candidates':
+            candidate_rows,
+    }
+
 def calibrate_semantic_similarity(similarity):
     if similarity is None:
         return 0.0
@@ -4008,7 +4230,22 @@ async def nova_recommend(payload: NovaRequest):
     if embedding_warning:
         warnings.append(embedding_warning)
     embedding_ms = round((time.perf_counter() - embedding_start) * 1000)
-    scored, scoring_weights = score_enriched_candidates(active_retrieval_tags, semantic_candidates, semantic_available)
-    recommendations = select_top_three(scored)
+
+    scored, scoring_weights = score_enriched_candidates(
+        active_retrieval_tags,
+        semantic_candidates,
+        semantic_available
+    )
+
+    calibration_debug = (
+        build_nova_calibration_debug(
+            scored
+        )
+    )
+
+    recommendations = select_top_three(
+        scored
+    )
+    
     total_ms = round((time.perf_counter() - total_start) * 1000)
-    return {'build': BUILD_ID, 'qwen_model': QWEN_MODEL_ID, 'embedding_model': EMBEDDING_MODEL_ID, 'mode': 'six-tag-sigmoid-hybrid', 'profile_source': profile_source, 'profile': profile, 'retrieval_debug': {'requested_tags': profile['retrieval_tags'], 'active_tags': active_retrieval_tags, 'dead_tags': search_bundle['dead_tags'], 'failed_queries': search_bundle['failed_queries'], 'candidate_strategy': 'top-2-per-usable-tag'}, 'shortlist_debug': shortlist_debug, 'candidate_count': candidate_count, 'shortlist_count': len(shortlist), 'semantic_available': semantic_available, 'timing_ms': {'qwen_profile': profile_ms, 'lastfm_initial_search': search_ms, 'lastfm_enrichment': enrichment_ms, 'embedding_similarity': embedding_ms, 'total': total_ms}, 'scoring_weights': scoring_weights, 'warnings': warnings, 'recommendation_count': len(recommendations), 'recommendations': recommendations}
+    return {'build': BUILD_ID, 'qwen_model': QWEN_MODEL_ID, 'embedding_model': EMBEDDING_MODEL_ID, 'mode': 'six-tag-sigmoid-hybrid', 'profile_source': profile_source, 'profile': profile, 'retrieval_debug': {'requested_tags': profile['retrieval_tags'], 'active_tags': active_retrieval_tags, 'dead_tags': search_bundle['dead_tags'], 'failed_queries': search_bundle['failed_queries'], 'candidate_strategy': 'top-2-per-usable-tag'}, 'shortlist_debug': shortlist_debug, 'candidate_count': candidate_count, 'shortlist_count': len(shortlist), 'semantic_available': semantic_available, 'timing_ms': {'qwen_profile': profile_ms, 'lastfm_initial_search': search_ms, 'lastfm_enrichment': enrichment_ms, 'embedding_similarity': embedding_ms, 'total': total_ms}, 'scoring_weights': scoring_weights, 'calibration_debug': calibration_debug, 'warnings': warnings, 'recommendation_count': len(recommendations), 'recommendations': recommendations}
