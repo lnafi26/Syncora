@@ -111,6 +111,57 @@ EMBEDDING_MODEL_ID = get_setting(
     ),
 )
 
+SEMANTIC_CALIBRATION_PROFILES = {
+    'Qwen/Qwen3-Embedding-8B': {
+        'type':
+            'bounded_sigmoid',
+
+        'floor':
+            0.40,
+
+        'midpoint':
+            0.50,
+
+        'ceiling':
+            0.64,
+
+        'steepness':
+            16.0,
+    },
+}
+
+
+DEFAULT_SEMANTIC_CALIBRATION = {
+    'type':
+        'bounded_sigmoid',
+
+    'floor':
+        0.40,
+
+    'midpoint':
+        0.50,
+
+    'ceiling':
+        0.64,
+
+    'steepness':
+        16.0,
+}
+
+
+def get_semantic_calibration_profile():
+    profile = (
+        SEMANTIC_CALIBRATION_PROFILES.get(
+            EMBEDDING_MODEL_ID
+        )
+        or
+        DEFAULT_SEMANTIC_CALIBRATION
+    )
+
+    return dict(
+        profile
+    )
+
 if LLM_PROVIDER not in {
     'local',
     'huggingface',
@@ -2660,14 +2711,124 @@ def build_nova_calibration_debug(
             candidate_rows,
     }
 
-def calibrate_semantic_similarity(similarity):
-    if similarity is None:
+def calibrate_semantic_similarity(
+    similarity
+):
+    if not isinstance(
+        similarity,
+        (int, float),
+    ):
         return 0.0
-    midpoint = 0.78
-    steepness = 30.0
-    exponent = -steepness * (similarity - midpoint)
-    exponent = min(60.0, max(-60.0, exponent))
-    return 1.0 / (1.0 + math.exp(exponent))
+
+    profile = (
+        get_semantic_calibration_profile()
+    )
+
+    floor = float(
+        profile[
+            'floor'
+        ]
+    )
+
+    midpoint = float(
+        profile[
+            'midpoint'
+        ]
+    )
+
+    ceiling = float(
+        profile[
+            'ceiling'
+        ]
+    )
+
+    steepness = float(
+        profile[
+            'steepness'
+        ]
+    )
+
+    similarity = float(
+        similarity
+    )
+
+    if similarity <= floor:
+        return 0.0
+
+    if similarity >= ceiling:
+        return 1.0
+
+    def sigmoid(
+        value
+    ):
+        exponent = (
+            -steepness
+            *
+            (
+                value
+                -
+                midpoint
+            )
+        )
+
+        exponent = min(
+            60.0,
+            max(
+                -60.0,
+                exponent,
+            ),
+        )
+
+        return (
+            1.0
+            /
+            (
+                1.0
+                +
+                math.exp(
+                    exponent
+                )
+            )
+        )
+
+    raw_fit = sigmoid(
+        similarity
+    )
+
+    floor_fit = sigmoid(
+        floor
+    )
+
+    ceiling_fit = sigmoid(
+        ceiling
+    )
+
+    usable_range = (
+        ceiling_fit
+        -
+        floor_fit
+    )
+
+    if usable_range <= 0:
+        return 0.0
+
+    calibrated_fit = (
+        (
+            raw_fit
+            -
+            floor_fit
+        )
+        /
+        usable_range
+    )
+
+    return max(
+        0.0,
+        min(
+            1.0,
+            calibrated_fit,
+        ),
+    )
 
 def score_enriched_candidates(active_retrieval_tags, enriched_candidates, semantic_available):
     desired_tags = active_retrieval_tags
