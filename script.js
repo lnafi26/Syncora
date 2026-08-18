@@ -2,6 +2,12 @@ const SUPABASE_URL = 'https://phxusxkhzxllrioxuzkr.supabase.co';
 const SUPABASE_KEY = 'sb_publishable_3GHRzFe9g3kgcvTaeTBtyQ_GDih979C';
 const db = supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
 
+const AUTH_REDIRECT_URL =
+    new URL(
+        "./",
+        window.location.href
+    ).href;
+
 // =====================================================
 // SUPABASE AUTHENTICATION
 // =====================================================
@@ -135,7 +141,8 @@ async function signUp() {
             email,
             password,
             options: {
-                emailRedirectTo: window.location.origin
+                emailRedirectTo:
+                    AUTH_REDIRECT_URL
             }
         });
 
