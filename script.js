@@ -144,7 +144,7 @@ async function signUp() {
                 emailRedirectTo:
                     AUTH_REDIRECT_URL
             }
-        }); //
+        }); //test
 
         if (error) {
             const message = error.message?.toLowerCase() || "";
