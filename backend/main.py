@@ -2763,22 +2763,17 @@ def build_candidate_embedding_document(
             'top_tags',
             []
         )[:12]
-        if tag.get('name')
+        if tag.get(
+            'name'
+        )
     ]
 
     if not tag_names:
-        tag_names = [
-            match['tag']
-            for match
-            in candidate.get(
-                'retrieval_matches',
-                []
-            )
-        ]
+        return None
 
     document_text = (
         'Candidate music profile. '
-        'Music tags and qualities: '
+        'Track-specific music tags and qualities: '
         + ', '.join(
             tag_names
         )
@@ -2805,32 +2800,159 @@ def cosine_similarity(vector_a, vector_b):
         return 0.0
     return dot_product / (magnitude_a * magnitude_b)
 
-def attach_semantic_similarity(profile, active_retrieval_tags, candidates):
-    query = build_embedding_query(profile, active_retrieval_tags)
-    documents = [build_candidate_embedding_document(candidate) for candidate in candidates]
-    texts = [query, *documents]
-    try:
-        vectors = create_embedding_vectors(
-            texts
+def attach_semantic_similarity(
+    profile,
+    active_retrieval_tags,
+    candidates
+):
+    query = build_embedding_query(
+        profile,
+        active_retrieval_tags
+    )
+
+    semantic_candidates = []
+
+    eligible_candidates = []
+    eligible_documents = []
+
+    for candidate in candidates:
+        candidate_copy = dict(
+            candidate
         )
-        
-        if len(vectors) != len(texts):
-            raise ValueError('Embedding model returned an unexpected vector count.')
-        query_vector = vectors[0]
-        semantic_candidates = []
-        for candidate, vector in zip(candidates, vectors[1:]):
-            candidate_copy = dict(candidate)
-            candidate_copy['semantic_similarity'] = cosine_similarity(query_vector, vector)
-            semantic_candidates.append(candidate_copy)
-        return (semantic_candidates, True, None)
+
+        candidate_copy[
+            'semantic_similarity'
+        ] = None
+
+        semantic_candidates.append(
+            candidate_copy
+        )
+
+        document = (
+            build_candidate_embedding_document(
+                candidate
+            )
+        )
+
+        if not document:
+            continue
+
+        eligible_candidates.append(
+            len(
+                semantic_candidates
+            )
+            -
+            1
+        )
+
+        eligible_documents.append(
+            document
+        )
+
+    if not eligible_documents:
+        warning = {
+            'stage':
+                'embedding_similarity',
+
+            'message':
+                (
+                    'Nova had no track-specific '
+                    'metadata suitable for semantic '
+                    'candidate scoring. Last.fm '
+                    'evidence was used instead.'
+                ),
+        }
+
+        return (
+            semantic_candidates,
+            False,
+            warning,
+        )
+
+    texts = [
+        query,
+        *eligible_documents,
+    ]
+
+    try:
+        vectors = (
+            create_embedding_vectors(
+                texts
+            )
+        )
+
+        if (
+            len(
+                vectors
+            )
+            !=
+            len(
+                texts
+            )
+        ):
+            raise ValueError(
+                (
+                    'Embedding model returned '
+                    'an unexpected vector count.'
+                )
+            )
+
+        query_vector = (
+            vectors[0]
+        )
+
+        for (
+            candidate_index,
+            vector,
+        ) in zip(
+            eligible_candidates,
+            vectors[1:],
+        ):
+            semantic_candidates[
+                candidate_index
+            ][
+                'semantic_similarity'
+            ] = (
+                cosine_similarity(
+                    query_vector,
+                    vector,
+                )
+            )
+
+        return (
+            semantic_candidates,
+            True,
+            None,
+        )
+
     except Exception as error:
-        fallback_candidates = []
-        for candidate in candidates:
-            candidate_copy = dict(candidate)
-            candidate_copy['semantic_similarity'] = None
-            fallback_candidates.append(candidate_copy)
-        warning = {'stage': 'embedding_similarity', 'message': 'Semantic embeddings were unavailable. Nova used Last.fm evidence only.', 'technical_error': str(error)}
-        return (fallback_candidates, False, warning)
+        warning = {
+            'stage':
+                'embedding_similarity',
+
+            'message':
+                (
+                    'Semantic embeddings were '
+                    'unavailable. Nova used '
+                    'Last.fm evidence only.'
+                ),
+
+            'technical_error':
+                str(
+                    error
+                ),
+        }
+
+        for candidate in semantic_candidates:
+            candidate[
+                'semantic_similarity'
+            ] = None
+
+        return (
+            semantic_candidates,
+            False,
+            warning,
+        )
 
 def build_nova_calibration_debug(
     scored_candidates
