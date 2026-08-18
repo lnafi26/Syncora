@@ -2057,16 +2057,78 @@ def create_nova_profile(payload: NovaRequest):
 
     TAG COMPOSITION:
 
-    - At least 4 of the 6 tags must be genres, subgenres,
-    or established musical styles.
-    - Up to 2 tags may describe an established musical mood,
-    energy, or sonic quality if they are useful Last.fm
-    tags.
-    - Order tags from most musically specific and useful
-    to broader supporting tags.
-    - The six tags should form a coherent musical
-    neighborhood unless the editor explicitly requests
-    strong stylistic contrast.
+    - Exactly 4 or 5 of the 6 tags should be genres,
+    subgenres, or established musical styles.
+    - At most 1 or 2 tags may be broader established
+    musical mood, texture, or energy tags.
+    - Order tags from strongest and most specific to
+    broader supporting tags.
+
+    ANCHOR-FAMILY RULE:
+
+    - Before choosing the six tags, silently determine the
+    single strongest musical family suggested by the
+    brief.
+    - The first 3 retrieval tags must establish that
+    musical family.
+    - Tags 4 through 6 must either:
+        a) belong to that same family,
+        b) be a clearly adjacent style, or
+        c) be a broader umbrella/tag that plausibly
+        contains or describes the first three.
+    - Do NOT use the final tags to introduce an unrelated
+    second musical family merely because it matches the
+    project's visual aesthetic.
+    - If two musical families are both plausible but the
+    brief does not explicitly request contrast, choose
+    the better-supported family and stay within it.
+
+    Examples:
+
+    COHERENT:
+    minimal techno
+    deep house
+    tech house
+    electronic
+    house
+    downtempo
+
+    COHERENT:
+    synthwave
+    chillwave
+    dream pop
+    electronic
+    atmospheric
+    downtempo
+
+    COHERENT:
+    indie folk
+    singer-songwriter
+    acoustic
+    folk
+    slowcore
+    melancholic
+
+    INCOHERENT:
+    minimal techno
+    deep house
+    progressive house
+    electronic
+    modern classical
+    ambient
+
+    INCOHERENT:
+    industrial
+    breakcore
+    drum and bass
+    electronic
+    indie folk
+    dream pop
+
+    The incoherent examples fail because the final tags
+    introduce a substantially different musical family
+    without explicit evidence that the editor wants a
+    cross-genre or contrasting soundtrack.
 
     EVIDENCE RULES:
 
@@ -2106,14 +2168,28 @@ def create_nova_profile(payload: NovaRequest):
     soft + intimate vocals + acoustic texture + slow build
         -> indie folk / singer-songwriter / acoustic may be plausible
 
-    Before outputting each retrieval tag, silently ask:
+    Before returning the final JSON, silently validate the six retrieval tags as a SET:
 
-    1. Does this describe music rather than the video?
-    2. Would searching this term plausibly retrieve a
-    coherent musical catalog?
-    3. Is there actual musical evidence in the brief for it?
-    4. Does it belong in the same general musical
-    neighborhood as the other retrieval tags?
+    1. Do the first three establish a recognizable musical
+    family?
+    2. Can every remaining tag be reasonably connected to
+    that family?
+    3. Did any tag enter only because of the visual subject,
+    luxury level, setting, editing style, or aesthetic?
+    4. Would searching all six tags retrieve substantially
+    overlapping kinds of music rather than unrelated
+    catalogs?
+
+    If one tag breaks the musical neighborhood, remove it
+    and replace it with a more coherent adjacent or broader
+    music tag before returning the JSON.
+
+    Then validate each tag individually:
+
+    - Does it describe music rather than the video?
+    - Is it a useful established Last.fm search concept?
+    - Is there musical evidence for it?
+    - Is it coherent with the anchor family?
 
     If the answer to #1 or #3 is no, move that idea into
     semantic_traits instead.
@@ -2290,7 +2366,17 @@ def create_nova_profile(payload: NovaRequest):
     """
 
     try:
-        completion = create_llm_completion(model=QWEN_MODEL_ID, messages=[{'role': 'system', 'content': "You are Nova, Syncora's music-discovery assistant. Return concise valid JSON only."}, {'role': 'user', 'content': prompt}], temperature=0.25, top_p=0.8, max_tokens=400)
+        completion = create_llm_completion(model=QWEN_MODEL_ID, messages=[{'role': 'system', 'content': "You are Nova, Syncora's music-discovery assistant. "
+            "Translate creative briefs into one coherent musical "
+            "retrieval neighborhood for Last.fm. The first three "
+            "retrieval tags establish an anchor musical family; "
+            "remaining tags must stay within, adjacent to, or "
+            "broaden that family unless the editor explicitly "
+            "requests stylistic contrast. Keep visual and "
+            "aesthetic concepts in semantic traits unless they "
+            "have independent musical support. Return concise "
+            "valid JSON only."},
+        {'role': 'user', 'content': prompt}], temperature=0.25, top_p=0.8, max_tokens=400)
     except Exception as error:
         error_name = (
             type(error).__name__
