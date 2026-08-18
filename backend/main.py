@@ -861,6 +861,117 @@ def get_supabase_pulsar_track_by_library_id(
         )
     )
 
+def get_supabase_pulsar_track_by_title_artist(
+    title,
+    artist,
+):
+    if (
+        not title
+        or
+        not artist
+    ):
+        return None
+
+    try:
+        response = (
+            supabase_cache_client
+            .table(
+                PULSAR_CACHE_TABLE
+            )
+            .select(
+                (
+                    'video_id,'
+                    'library_track_id,'
+                    'title,'
+                    'artist,'
+                    'payload'
+                )
+            )
+            .ilike(
+                'title',
+                str(
+                    title
+                ),
+            )
+            .limit(
+                10
+            )
+            .execute()
+        )
+
+    except Exception as error:
+        print(
+            '[PULSAR SUPABASE CACHE READ ERROR] '
+            f'{type(error).__name__}: {error}'
+        )
+
+        return None
+
+    rows = (
+        response.data
+        if isinstance(
+            response.data,
+            list,
+        )
+        else []
+    )
+
+    desired_title = (
+        normalize_ytmusic_text(
+            title
+        )
+    )
+
+    desired_artist = (
+        normalize_ytmusic_text(
+            artist
+        )
+    )
+
+    for row in rows:
+        if not isinstance(
+            row,
+            dict,
+        ):
+            continue
+
+        stored_title = (
+            normalize_ytmusic_text(
+                row.get(
+                    'title'
+                )
+            )
+        )
+
+        stored_artist = (
+            normalize_ytmusic_text(
+                row.get(
+                    'artist'
+                )
+            )
+        )
+
+        if (
+            stored_title
+            !=
+            desired_title
+        ):
+            continue
+
+        if (
+            stored_artist
+            !=
+            desired_artist
+        ):
+            continue
+
+        return (
+            parse_supabase_pulsar_cache_row(
+                row
+            )
+        )
+
+    return None
 
 def get_local_pulsar_track_by_video_id(
     video_id
@@ -1015,6 +1126,123 @@ def get_cached_pulsar_track_by_library_id(
         )
     )
 
+def get_cached_pulsar_track_by_title_artist(
+    title,
+    artist,
+):
+    cached_entry = (
+        get_supabase_pulsar_track_by_title_artist(
+            title,
+            artist,
+        )
+    )
+
+    if cached_entry:
+        return cached_entry
+
+    desired_title = (
+        normalize_ytmusic_text(
+            title
+        )
+    )
+
+    desired_artist = (
+        normalize_ytmusic_text(
+            artist
+        )
+    )
+
+    with pulsar_cache_lock:
+        tracks = (
+            pulsar_analysis_cache
+            .get(
+                'tracks',
+                {},
+            )
+        )
+
+        for (
+            video_id,
+            entry,
+        ) in tracks.items():
+            if not isinstance(
+                entry,
+                dict,
+            ):
+                continue
+
+            track = (
+                entry.get(
+                    'track'
+                )
+                or
+                {}
+            )
+
+            stored_title = (
+                normalize_ytmusic_text(
+                    track.get(
+                        'title'
+                    )
+                )
+            )
+
+            artists = (
+                track.get(
+                    'artists'
+                )
+                or
+                []
+            )
+
+            if isinstance(
+                artists,
+                str,
+            ):
+                artists = [
+                    artists
+                ]
+
+            stored_artists = [
+                normalize_ytmusic_text(
+                    item
+                )
+                for item
+                in artists
+                if item
+            ]
+
+            if (
+                stored_title
+                !=
+                desired_title
+            ):
+                continue
+
+            if (
+                desired_artist
+                not in
+                stored_artists
+            ):
+                continue
+
+            result = dict(
+                entry
+            )
+
+            result[
+                'video_id'
+            ] = str(
+                video_id
+            )
+
+            result[
+                '_cache_source'
+            ] = 'local_disk'
+
+            return result
+
+    return None
 
 def cache_pulsar_resolution(
     video_id,
@@ -2109,6 +2337,204 @@ async def pulsar_resolve(payload: PulsarResolveRequest):
     start_time = time.perf_counter()
     desired_title = normalize_ytmusic_text(payload.title)
     desired_artist = normalize_ytmusic_text(payload.artist)
+
+    cached_entry = (
+        get_cached_pulsar_track_by_title_artist(
+            payload.title,
+            payload.artist,
+        )
+    )
+
+    if cached_entry:
+        cached_track = (
+            cached_entry.get(
+                'track'
+            )
+            or
+            {}
+        )
+
+        video_id = (
+            cached_entry.get(
+                'video_id'
+            )
+            or
+            cached_track.get(
+                'video_id'
+            )
+        )
+
+        library_track_id = (
+            cached_entry.get(
+                'library_track_id'
+            )
+        )
+
+        if (
+            video_id
+            and
+            library_track_id
+        ):
+            artists = (
+                cached_track.get(
+                    'artists'
+                )
+                or
+                [
+                    payload.artist
+                ]
+            )
+
+            if isinstance(
+                artists,
+                str,
+            ):
+                artists = [
+                    artists
+                ]
+
+            resolved_track = {
+                'title':
+                    (
+                        cached_track.get(
+                            'title'
+                        )
+                        or
+                        payload.title
+                    ),
+
+                'artists':
+                    artists,
+
+                'artist_ids':
+                    (
+                        cached_track.get(
+                            'artist_ids'
+                        )
+                        or
+                        []
+                    ),
+
+                'album':
+                    cached_track.get(
+                        'album'
+                    ),
+
+                'album_id':
+                    cached_track.get(
+                        'album_id'
+                    ),
+
+                'duration':
+                    cached_track.get(
+                        'duration'
+                    ),
+
+                'duration_seconds':
+                    cached_track.get(
+                        'duration_seconds'
+                    ),
+
+                'video_id':
+                    str(
+                        video_id
+                    ),
+
+                'youtube_music_url':
+                    (
+                        cached_track.get(
+                            'youtube_music_url'
+                        )
+                        or
+                        cached_track.get(
+                            'youtube_url'
+                        )
+                        or
+                        (
+                            'https://music.youtube.com/'
+                            f'watch?v={video_id}'
+                        )
+                    ),
+
+                'is_explicit':
+                    cached_track.get(
+                        'is_explicit'
+                    ),
+
+                'match_score':
+                    (
+                        cached_track.get(
+                            'resolver_match_score'
+                        )
+                        or
+                        cached_track.get(
+                            'match_score'
+                        )
+                        or
+                        1.0
+                    ),
+            }
+
+            total_ms = round(
+                (
+                    time.perf_counter()
+                    - start_time
+                )
+                * 1000
+            )
+
+            print(
+                '[PULSAR RESOLVER CACHE HIT] '
+                f'{resolved_track["title"]} — '
+                f'{", ".join(artists)} '
+                f'-> {library_track_id}'
+            )
+
+            return {
+                'build':
+                    PULSAR_RESOLVER_BUILD_ID,
+
+                'resolved':
+                    True,
+
+                'source':
+                    'Syncora Cache',
+
+                'requested': {
+                    'title':
+                        payload.title,
+
+                    'artist':
+                        payload.artist,
+
+                    'mbid':
+                        payload.mbid,
+                },
+
+                'track':
+                    resolved_track,
+
+                'cache': {
+                    'hit':
+                        True,
+
+                    'source':
+                        cached_entry.get(
+                            '_cache_source',
+                            'supabase',
+                        ),
+
+                    'library_track_id':
+                        str(
+                            library_track_id
+                        ),
+                },
+
+                'timing_ms': {
+                    'total':
+                        total_ms,
+                },
+            }
     query = f'{payload.artist} {payload.title}'.strip()
     try:
         search_results = await asyncio.to_thread(ytmusic.search, query, filter='songs', limit=20)

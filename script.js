@@ -469,7 +469,7 @@ const pageInfo = {
 // NOVA API CONFIGURATION
 // =====================================================
 
-const SYNCORA_API_URL = "http://127.0.0.1:8000";
+const SYNCORA_API_URL = "https://lnafi-syncora-backend.hf.space";
 const NOVA_REQUEST_TIMEOUT_MS = 120000;
 
 let currentNovaProfile = null;
