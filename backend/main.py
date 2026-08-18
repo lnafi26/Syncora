@@ -45,7 +45,7 @@ def get_setting(name, default=None):
     return default
 
 
-BUILD_ID = 'nova-hybrid-0.7.5'
+BUILD_ID = 'nova-hybrid-0.7.6'
 PULSAR_RESOLVER_BUILD_ID = 'pulsar-ytmusic-resolver-0.2.0'
 PULSAR_ANALYSIS_BUILD_ID = 'pulsar-signal-0.5.1'
 
