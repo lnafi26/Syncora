@@ -19,6 +19,11 @@ from ytmusicapi import YTMusic
 from huggingface_hub import InferenceClient
 from datetime import datetime, timezone
 from supabase import create_client
+import functools
+import requests
+
+from requests.adapters import HTTPAdapter
+from urllib3.util.retry import Retry
 
 BACKEND_DIR = Path(__file__).resolve().parent
 ENV_PATH = BACKEND_DIR / '.env'
@@ -540,8 +545,65 @@ def create_embedding_vectors(texts):
 
     return vectors
 
+def create_ytmusic_client():
+    session = requests.Session()
 
-ytmusic = YTMusic()
+    # Do not inherit HTTP_PROXY / HTTPS_PROXY / ALL_PROXY
+    # settings from the hosting environment.
+    session.trust_env = False
+
+    retry_policy = Retry(
+        total=4,
+        connect=4,
+        read=4,
+        status=3,
+        backoff_factor=0.75,
+        status_forcelist=[
+            429,
+            500,
+            502,
+            503,
+            504,
+        ],
+        allowed_methods=frozenset([
+            'GET',
+            'POST',
+        ]),
+        raise_on_status=False,
+    )
+
+    adapter = HTTPAdapter(
+        max_retries=retry_policy,
+        pool_connections=10,
+        pool_maxsize=10,
+    )
+
+    session.mount(
+        'https://',
+        adapter,
+    )
+
+    session.mount(
+        'http://',
+        adapter,
+    )
+
+    # ytmusicapi officially supports supplying a custom
+    # Requests Session. Give every request explicit timeout
+    # values rather than relying on an indefinite connection.
+    session.request = functools.partial(
+        session.request,
+        timeout=(
+            15,
+            30,
+        ),
+    )
+
+    return YTMusic(
+        requests_session=session,
+    )
+
+ytmusic = create_ytmusic_client()
 
 class NovaRequest(BaseModel):
     project_name: str = Field(min_length=1, max_length=200)
@@ -4242,8 +4304,42 @@ async def pulsar_resolve(payload: PulsarResolveRequest):
     query = f'{payload.artist} {payload.title}'.strip()
     try:
         search_results = await asyncio.to_thread(ytmusic.search, query, filter='songs', limit=20)
+
     except Exception as error:
-        raise HTTPException(status_code=502, detail={'error': 'Pulsar could not search YouTube Music.', 'stage': 'pulsar_ytmusic_search', 'technical_error': str(error), 'build': PULSAR_RESOLVER_BUILD_ID})
+        print(
+            '[PULSAR YTMUSIC ERROR] '
+            f'{type(error).__name__}: {error}'
+        )
+
+        raise HTTPException(
+            status_code=502,
+            detail={
+                'error':
+                    'Pulsar could not search YouTube Music.',
+
+                'message':
+                    (
+                        'The connection to YouTube Music '
+                        'could not be completed.'
+                    ),
+
+                'stage':
+                    'pulsar_ytmusic_search',
+
+                'technical_error':
+                    (
+                        f'{type(error).__name__}: '
+                        f'{error}'
+                    ),
+
+                'retryable':
+                    True,
+
+                'build':
+                    PULSAR_RESOLVER_BUILD_ID,
+            }
+        )
+    
     if not search_results:
         raise HTTPException(status_code=404, detail={'error': 'YouTube Music returned no song results.', 'stage': 'pulsar_ytmusic_search', 'query': query, 'build': PULSAR_RESOLVER_BUILD_ID})
     scored_results = []
