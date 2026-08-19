@@ -4528,6 +4528,12 @@ async def debug_youtube_transport():
         'https://music.youtube.com/',
         'https://www.youtube.com/',
         'https://www.google.com/generate_204',
+        (
+            'https://www.googleapis.com/youtube/v3/search'
+            '?part=snippet'
+            '&type=video'
+            '&q=Take%20On%20Me%20a-ha'
+        ),
     ]
 
     for url in targets:
