@@ -48,7 +48,7 @@ def get_setting(name, default=None):
 
 
 BUILD_ID = 'nova-hybrid-0.7.8'
-PULSAR_RESOLVER_BUILD_ID = 'pulsar-youtube-data-resolver-0.3.0'
+PULSAR_RESOLVER_BUILD_ID = 'pulsar-youtube-data-resolver-0.3.1'
 PULSAR_ANALYSIS_BUILD_ID = 'pulsar-signal-0.5.1'
 
 LLM_PROVIDER = (
@@ -4165,15 +4165,37 @@ YOUTUBE_HARD_REJECT_MARKERS = [
     'behind scenes',
 ]
 
-
 YOUTUBE_ALTERNATE_VERSION_MARKERS = [
+    # Performance / alternate-recording variants. These are
+    # rejected unless the user explicitly included the marker
+    # in the requested song title.
     'live',
+    'live at',
+    'live from',
+    'concert',
+    'unplugged',
+    'mtv unplugged',
+    'session',
+    'sessions',
+    'studio session',
+    'stripped',
+    'acoustic',
+    'acoustic version',
+    'piano version',
+    'orchestral version',
+    'alternate take',
+    'alternate version',
+    're recorded',
+    're-recorded',
+    're recording',
+    're-recording',
+
+    # Mix / speed / release variants.
     'remix',
     'sped up',
     'slowed',
     'slowed reverb',
     'nightcore',
-    'acoustic',
     'instrumental',
     'karaoke',
     'cover',
@@ -4181,10 +4203,10 @@ YOUTUBE_ALTERNATE_VERSION_MARKERS = [
     'extended mix',
     'club mix',
     'demo',
+    'demo version',
     'remaster',
     'remastered',
 ]
-
 
 YOUTUBE_ART_TRACK_DESCRIPTION_MARKERS = [
     'provided to youtube by',
