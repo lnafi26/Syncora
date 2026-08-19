@@ -4500,6 +4500,127 @@ async def pulsar_analyze_start(payload: PulsarResolveRequest):
         },
     }
 
+@app.get('/debug/youtube-transport')
+async def debug_youtube_transport():
+    import ssl
+    import sys
+    import requests
+    import urllib3
+
+    results = {
+        'python':
+            sys.version,
+
+        'openssl':
+            ssl.OPENSSL_VERSION,
+
+        'requests_version':
+            requests.__version__,
+
+        'urllib3_version':
+            urllib3.__version__,
+
+        'targets':
+            {},
+    }
+
+    targets = [
+        'https://music.youtube.com/',
+        'https://www.youtube.com/',
+        'https://www.google.com/generate_204',
+    ]
+
+    for url in targets:
+        target_result = {}
+
+        # -------------------------
+        # Requests
+        # -------------------------
+
+        try:
+            response = await asyncio.to_thread(
+                requests.get,
+                url,
+                timeout=15,
+            )
+
+            target_result[
+                'requests'
+            ] = {
+                'ok':
+                    True,
+
+                'status':
+                    response.status_code,
+
+                'final_url':
+                    response.url,
+            }
+
+        except Exception as error:
+            target_result[
+                'requests'
+            ] = {
+                'ok':
+                    False,
+
+                'error_type':
+                    type(error).__name__,
+
+                'error':
+                    str(error),
+            }
+
+        # -------------------------
+        # HTTPX
+        # -------------------------
+
+        try:
+            async with httpx.AsyncClient(
+                timeout=15.0,
+                follow_redirects=True,
+                trust_env=False,
+            ) as client:
+                response = await client.get(
+                    url
+                )
+
+            target_result[
+                'httpx'
+            ] = {
+                'ok':
+                    True,
+
+                'status':
+                    response.status_code,
+
+                'final_url':
+                    str(
+                        response.url
+                    ),
+            }
+
+        except Exception as error:
+            target_result[
+                'httpx'
+            ] = {
+                'ok':
+                    False,
+
+                'error_type':
+                    type(error).__name__,
+
+                'error':
+                    str(error),
+            }
+
+        results[
+            'targets'
+        ][
+            url
+        ] = target_result
+
+    return results
 
 @app.get('/pulsar/analyze/status/{library_track_id}')
 async def pulsar_analyze_status(
