@@ -1,0 +1,195 @@
+<!DOCTYPE html>
+
+<html lang="en">
+<head>
+<meta charset="utf-8"/>
+<meta content="width=device-width, initial-scale=1.0" name="viewport"/>
+<meta content="Create a Pulsar Signal for a chosen song and map useful musical moments for editing." name="description"/>
+<title>Syncora — Pulsar Workspace</title>
+<link href="style.css" rel="stylesheet"/>
+</head>
+<body class="auth-pending protected-page workflow-page" data-page="pulsar-workflow" data-page-kind="protected" data-section="pulsar">
+<div aria-hidden="true" class="auth-gate"><span class="gate-orbit"></span><strong>Syncora</strong></div>
+<header class="site-header">
+<nav aria-label="Main navigation" class="site-nav">
+<a aria-label="Syncora Launchpad" class="brand top-brand" href="launchpad.html"><span aria-hidden="true" class="brand-mark"><i></i><i></i><i></i></span><span class="brand-copy"><strong>Syncora</strong><small>Music planning for editors</small></span></a>
+<div class="top-nav-links"><a class="top-nav-link" data-nav-section="launchpad" href="launchpad.html">Launchpad</a><a class="top-nav-link" data-nav-section="nova" href="nova.html">Nova</a><a class="top-nav-link active" data-nav-section="pulsar" href="pulsar.html">Pulsar</a><a class="top-nav-link" data-nav-section="echoes" href="echoes.html">Echoes</a></div>
+<button aria-label="Open account" class="account-pill" id="topAccountButton" type="button">
+<span class="avatar nav-avatar" id="navAccountAvatar">S</span>
+<span class="account-pill-copy"><strong id="navAccountName">Account</strong><small id="navAccountEmail">Signed in</small></span>
+<span aria-hidden="true" class="account-chevron">⌄</span>
+</button>
+</nav>
+</header>
+<main class="page-shell">
+<section class="workflow-masthead pulsar-workflow-masthead">
+<div><p class="eyebrow">Pulsar workspace</p><h1>Create the Signal.</h1><p>Choose the recording and creative direction. Pulsar will map useful musical change into practical editing opportunities.</p></div>
+<a class="quiet-link" href="pulsar.html">← About Pulsar</a>
+</section><div class="workspace-grid" id="pulsarWorkflow">
+<form class="panel form-panel" id="blueprintForm">
+<div class="panel-heading">
+<div>
+<p class="eyebrow">Pulsar workspace</p>
+<h2>Create a Signal</h2>
+<p>Set the song and the kind of guidance you want from the map.</p>
+</div>
+<span class="step-badge">Signal setup</span>
+</div>
+<div class="selected-track hidden" id="selectedTrackBanner">
+<div><small>Selected through Nova</small> <strong id="selectedTrackName"></strong> <span id="selectedTrackMeta"></span></div>
+<button class="text-button" id="changeTrackButton" type="button">Change</button>
+</div>
+<div class="form-grid">
+<label class="field">
+<span>Song title</span>
+<input autocomplete="off" id="blueprintSong" placeholder="Resonance" required="" type="text"/>
+</label>
+<label class="field">
+<span>Artist</span>
+<input autocomplete="off" id="blueprintArtist" placeholder="HOME" required="" type="text"/>
+</label>
+
+<label class="field">
+<span>Editing direction</span>
+<select id="musicProfile">
+<option value="dynamic">Dynamic / varied</option>
+<option value="steady">Steady / restrained</option>
+<option value="build">Build toward a payoff</option>
+<option value="dramatic">Dramatic contrast</option>
+<option value="soft">Soft / atmospheric</option>
+</select>
+</label>
+<label class="field full">
+<span>Editing context</span>
+<textarea id="pulsarEditingContext" placeholder="Describe the footage or the kind of edit you are building. For example: a cinematic nighttime automotive edit with clean cuts and speed ramps." rows="3"></textarea>
+<small class="field-note">Pulsar uses this only to shape editing suggestions; the musical timestamps come from the audio analysis.</small>
+</label>
+<fieldset class="field full choice-group">
+<legend>Suggestion density</legend>
+<div class="segmented three">
+<label>
+<input name="density" type="radio" value="minimal"/>
+<span>Minimal</span>
+</label>
+<label>
+<input checked="" name="density" type="radio" value="balanced"/>
+<span>Balanced</span>
+</label>
+<label>
+<input name="density" type="radio" value="detailed"/>
+<span>Detailed</span>
+</label>
+</div>
+</fieldset>
+<fieldset class="field full choice-group">
+<legend>Include suggestions for</legend>
+<div class="check-grid">
+<label>
+<input checked="" name="cueType" type="checkbox" value="cut"/>
+<span>Cuts</span>
+</label>
+<label>
+<input checked="" name="cueType" type="checkbox" value="transition"/>
+<span>Transitions</span>
+</label>
+<label>
+<input checked="" name="cueType" type="checkbox" value="effect"/>
+<span>Visual effects</span>
+</label>
+<label>
+<input checked="" name="cueType" type="checkbox" value="speed"/>
+<span>Speed changes</span>
+</label>
+<label>
+<input name="cueType" type="checkbox" value="text"/>
+<span>Text moments</span>
+</label>
+</div>
+</fieldset>
+</div>
+<div aria-live="polite" class="pulsar-progress hidden" id="pulsarProgress" role="status">
+<div class="pulsar-progress-head">
+<span aria-hidden="true" class="pulsar-spinner"></span>
+<div><strong id="pulsarProgressTitle">Preparing Pulsar…</strong> <small id="pulsarProgressDetail"></small></div>
+</div>
+<div class="pulsar-progress-steps">
+<div class="pulsar-progress-step" data-pulsar-stage="resolve"><i>1</i> <span>Identify recording</span></div>
+<div class="pulsar-progress-step" data-pulsar-stage="analyze"><i>2</i> <span>Analyze audio</span></div>
+<div class="pulsar-progress-step" data-pulsar-stage="signal"><i>3</i> <span>Build Signal</span></div>
+</div>
+</div>
+<div class="form-actions">
+<button class="button ghost" id="loadDemoBlueprint" type="button">Load demo</button>
+<button class="button primary" id="pulsarSubmitButton" type="submit">Generate Signal ⌁</button>
+</div>
+</form>
+<aside class="panel guidance-panel">
+<div class="insight">
+<span>⌁</span>
+<div>
+<h3>Guidance, not autopilot</h3>
+<p>Pulsar surfaces useful moments and possible moves. You decide what belongs in the final edit.</p>
+</div>
+</div>
+<div class="legend">
+<h4>Signal strength</h4>
+<div><i class="primary-dot"></i> <strong>Primary</strong> <small>Highest measured change</small></div>
+<div><i class="secondary-dot"></i> <strong>Secondary</strong> <small>Notable measured change</small></div>
+<div><i class="optional-dot"></i> <strong>Optional</strong> <small>Lower-salience opportunity</small></div>
+</div>
+</aside>
+</div><section class="blueprint-output hidden" id="blueprintOutput">
+<div class="blueprint-header">
+<div>
+<p class="eyebrow">Generated Signal</p>
+<h2 id="outputTitle">Signal</h2>
+<p id="outputSummary"></p>
+</div>
+<div class="blueprint-actions">
+<button class="button ghost small" id="copyBlueprint">Copy notes</button>
+<button class="button primary small" id="saveBlueprint">Capture Signal</button>
+</div>
+</div>
+<div aria-label="Resolved track analysis" class="signal-analysis hidden" id="signalAnalysis"></div>
+<div class="timeline-panel">
+<div class="timeline-top">
+<div><strong>Signal timeline</strong> <small id="timelineWindowLabel">Each marker corresponds to a measured change below.</small></div>
+<span id="cueCount">0 cues</span>
+</div>
+<div class="visual-timeline" id="visualTimeline"></div>
+</div>
+<div class="table-wrap">
+<table>
+<thead>
+<tr>
+<th>Time</th>
+<th>Strength</th>
+<th>What changed</th>
+<th>Suggested edit</th>
+<th></th>
+</tr>
+</thead>
+<tbody id="cueTableBody"></tbody>
+</table>
+</div>
+</section></main>
+<div aria-label="Syncora account" aria-modal="true" class="modal-backdrop hidden" id="accountModal" role="dialog">
+<div class="modal account-modal">
+<button aria-label="Close" class="modal-close" data-close="accountModal">×</button>
+<div id="signedInAccount">
+<p class="eyebrow">Account</p>
+<h2 id="signedInName">Signed in</h2>
+<p id="signedInEmail"></p>
+<div class="account-summary">
+<div><strong id="accountBlueprintCount">0</strong><span>Captured Signals</span></div>
+<div><strong>Supabase</strong><span>Authentication</span></div>
+</div>
+<button class="button danger" id="signOutButton" type="button">Log out</button>
+</div>
+</div>
+</div>
+<div aria-live="polite" class="toast hidden" id="toast" role="status"></div>
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<script src="script.js"></script>
+</body>
+</html>

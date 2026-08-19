@@ -2,11 +2,21 @@ const SUPABASE_URL = 'https://phxusxkhzxllrioxuzkr.supabase.co';
 const SUPABASE_KEY = 'sb_publishable_3GHRzFe9g3kgcvTaeTBtyQ_GDih979C';
 const db = supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
 
-const AUTH_REDIRECT_URL =
-    new URL(
-        "./",
-        window.location.href
-    ).href;
+const PAGE_KIND = document.body.dataset.pageKind || 'protected';
+const CURRENT_PAGE = document.body.dataset.page || '';
+const AUTH_PAGE_URL = new URL('./index.html', window.location.href).href;
+const APP_HOME_URL = new URL('./launchpad.html', window.location.href).href;
+const AUTH_REDIRECT_URL = AUTH_PAGE_URL;
+
+function routeTo(relativePath, { replace = false } = {}) {
+    const destination = new URL(relativePath, window.location.href).href;
+
+    if (replace) {
+        window.location.replace(destination);
+    } else {
+        window.location.assign(destination);
+    }
+}
 
 // =====================================================
 // SUPABASE AUTHENTICATION
@@ -46,384 +56,185 @@ function getAccountDisplayName(user) {
         .replace(/\b\w/g, character => character.toUpperCase());
 }
 
+function revealAuthenticatedPage() {
+    document.body.classList.remove('auth-pending');
+}
+
 function updateAuthUI(session) {
     const user = session?.user || null;
 
-    const signedOutAccount = document.getElementById('signedOutAccount');
-    const signedInAccount = document.getElementById('signedInAccount');
-    const sidebarName = document.getElementById('sidebarName');
-    const sidebarEmail = document.getElementById('sidebarEmail');
-    const sidebarAvatar = document.getElementById('sidebarAvatar');
-    const topAccountButton = document.getElementById('topAccountButton');
+    if (!user) {
+        if (PAGE_KIND === 'protected') {
+            routeTo('./index.html', { replace: true });
+            return;
+        }
+
+        document.getElementById('signedOutAccount')?.classList.remove('hidden');
+        revealAuthenticatedPage();
+        return;
+    }
+
+    if (PAGE_KIND === 'auth') {
+        routeTo('./launchpad.html', { replace: true });
+        return;
+    }
+
+    const displayName = getAccountDisplayName(user);
     const signedInName = document.getElementById('signedInName');
     const signedInEmail = document.getElementById('signedInEmail');
+    const navAccountName = document.getElementById('navAccountName');
+    const navAccountEmail = document.getElementById('navAccountEmail');
+    const navAccountAvatar = document.getElementById('navAccountAvatar');
 
-    if (user) {
-        const displayName = getAccountDisplayName(user);
+    if (signedInName) signedInName.textContent = displayName;
+    if (signedInEmail) signedInEmail.textContent = user.email || '';
+    if (navAccountName) navAccountName.textContent = displayName;
+    if (navAccountEmail) navAccountEmail.textContent = user.email || 'Signed in';
+    if (navAccountAvatar) navAccountAvatar.textContent = displayName.charAt(0).toUpperCase();
 
-        signedOutAccount?.classList.add('hidden');
-        signedInAccount?.classList.remove('hidden');
-
-        if (sidebarName) {
-            sidebarName.textContent = displayName;
-        }
-
-        if (sidebarEmail) {
-            sidebarEmail.textContent = user.email || '';
-        }
-
-        if (sidebarAvatar) {
-            sidebarAvatar.textContent = displayName.charAt(0).toUpperCase();
-        }
-
-        if (topAccountButton) {
-            topAccountButton.textContent = 'Account';
-        }
-
-        if (signedInName) {
-            signedInName.textContent = displayName;
-        }
-
-        if (signedInEmail) {
-            signedInEmail.textContent = user.email || '';
-        }
-
-        setAuthMessage();
-    } else {
-        signedOutAccount?.classList.remove('hidden');
-        signedInAccount?.classList.add('hidden');
-
-        if (sidebarName) {
-            sidebarName.textContent = 'Guest editor';
-        }
-
-        if (sidebarEmail) {
-            sidebarEmail.textContent = 'Sign in to Synchora';
-        }
-
-        if (sidebarAvatar) {
-            sidebarAvatar.textContent = 'G';
-        }
-
-        if (topAccountButton) {
-            topAccountButton.textContent = 'Sign in';
-        }
-
-        if (signedInName) {
-            signedInName.textContent = 'Signed in';
-        }
-
-        if (signedInEmail) {
-            signedInEmail.textContent = '';
-        }
-    }
+    setAuthMessage();
+    revealAuthenticatedPage();
 }
 
 async function signUp() {
     const email = authEmailInput?.value.trim();
-    const password = authPasswordInput?.value || "";
+    const password = authPasswordInput?.value || '';
 
     if (!email || !password) {
-        setAuthMessage("Please enter an email and password.", "error");
+        setAuthMessage('Please enter an email and password.', 'error');
         return;
     }
 
     if (password.length < 6) {
-        setAuthMessage("Your password must be at least 6 characters.", "error");
+        setAuthMessage('Your password must be at least 6 characters.', 'error');
         return;
     }
 
-    setAuthMessage("Creating your account...");
-    authSignupButton?.setAttribute("disabled", "");
+    setAuthMessage('Creating your account...');
+    authSignupButton?.setAttribute('disabled', '');
 
     try {
         const { data, error } = await db.auth.signUp({
             email,
             password,
             options: {
-                emailRedirectTo:
-                    AUTH_REDIRECT_URL
+                emailRedirectTo: AUTH_REDIRECT_URL
             }
-        }); //test
+        });
 
         if (error) {
-            const message = error.message?.toLowerCase() || "";
+            const message = error.message?.toLowerCase() || '';
 
-            if (
-                message.includes("already registered") ||
-                message.includes("already exists")
-            ) {
-                setAuthMessage(
-                    "An account with this email already exists. Log in instead.",
-                    "error"
-                );
+            if (message.includes('already registered') || message.includes('already exists')) {
+                setAuthMessage('An account with this email already exists. Log in instead.', 'error');
                 return;
             }
 
-            if (message.includes("password")) {
-                setAuthMessage(error.message, "error");
-                return;
-            }
-
-            if (message.includes("email")) {
-                setAuthMessage(error.message, "error");
-                return;
-            }
-
-            setAuthMessage(
-                "We couldn't create your account. Please try again.",
-                "error"
-            );
-
-            console.error("Signup error:", error);
+            setAuthMessage(error.message || "We couldn't create your account. Please try again.", 'error');
+            console.error('Signup error:', error);
             return;
         }
 
         const identities = data?.user?.identities;
 
-        if (
-            data?.user &&
-            Array.isArray(identities) &&
-            identities.length === 0
-        ) {
-            setAuthMessage(
-                "An account with this email already exists. Log in instead.",
-                "error"
-            );
-
-            authPasswordInput.value = "";
+        if (data?.user && Array.isArray(identities) && identities.length === 0) {
+            setAuthMessage('An account with this email already exists. Log in instead.', 'error');
+            if (authPasswordInput) authPasswordInput.value = '';
             return;
         }
 
         if (data?.session) {
-            setAuthMessage();
-            closeModal("accountModal");
-            showToast("Account created. You are signed in.");
+            setAuthMessage('Account created. Opening your workspace…', 'success');
             return;
         }
 
-        if (
-            data?.user &&
-            Array.isArray(identities) &&
-            identities.length > 0
-        ) {
-            authPasswordInput.value = "";
-
-            setAuthMessage(
-                "Account created. Check your email to confirm your address, then sign in.",
-                "success"
-            );
-
+        if (data?.user && Array.isArray(identities) && identities.length > 0) {
+            if (authPasswordInput) authPasswordInput.value = '';
+            setAuthMessage('Account created. Check your email to confirm your address, then sign in.', 'success');
             return;
         }
 
-        setAuthMessage(
-            "We couldn't confirm whether your account was created. Please try again.",
-            "error"
-        );
-
-        console.warn("Unexpected signup response:", data);
+        setAuthMessage("We couldn't confirm whether your account was created. Please try again.", 'error');
     } catch (error) {
-        console.error("Unexpected signup error:", error);
-
-        setAuthMessage(
-            "Something went wrong while creating your account. Please try again.",
-            "error"
-        );
+        console.error('Unexpected signup error:', error);
+        setAuthMessage('Something went wrong while creating your account. Please try again.', 'error');
     } finally {
-        authSignupButton?.removeAttribute("disabled");
+        authSignupButton?.removeAttribute('disabled');
     }
 }
 
 async function logIn(event) {
     event?.preventDefault();
 
-    const email =
-        authEmailInput?.value.trim();
+    const email = authEmailInput?.value.trim();
+    const password = authPasswordInput?.value || '';
 
-    const password =
-        authPasswordInput?.value
-        ||
-        "";
-
-    if (
-        !email
-        ||
-        !password
-    ) {
-        setAuthMessage(
-            "Please enter your email and password.",
-            "error"
-        );
-
+    if (!email || !password) {
+        setAuthMessage('Please enter your email and password.', 'error');
         return;
     }
 
-    const loginButton =
-        document.getElementById(
-            "accountLoginButton"
-        );
-
-    loginButton?.setAttribute(
-        "disabled",
-        ""
-    );
-
-    setAuthMessage(
-        "Signing you in..."
-    );
+    const loginButton = document.getElementById('accountLoginButton');
+    loginButton?.setAttribute('disabled', '');
+    setAuthMessage('Signing you in...');
 
     try {
-        const {
-            error
-        } = await db.auth
-            .signInWithPassword({
-                email,
-                password
-            });
+        const { error } = await db.auth.signInWithPassword({ email, password });
 
         if (error) {
-            setAuthMessage(
-                error.message
-                ||
-                "Could not sign in. Please try again.",
-                "error"
-            );
-
-            console.error(
-                "Login error:",
-                error
-            );
-
+            setAuthMessage(error.message || 'Could not sign in. Please try again.', 'error');
+            console.error('Login error:', error);
             return;
         }
 
-        authPasswordInput.value =
-            "";
-
-        setAuthMessage();
-
-        closeModal(
-            "accountModal"
-        );
-
-        showToast(
-            "Signed in."
-        );
+        if (authPasswordInput) authPasswordInput.value = '';
+        setAuthMessage('Signed in. Opening your workspace…', 'success');
     } catch (error) {
-        console.error(
-            "Unexpected login error:",
-            error
-        );
-
-        setAuthMessage(
-            "Could not reach the account service. Check your connection and try again.",
-            "error"
-        );
+        console.error('Unexpected login error:', error);
+        setAuthMessage('Could not reach the account service. Check your connection and try again.', 'error');
     } finally {
-        loginButton
-            ?.removeAttribute(
-                "disabled"
-            );
+        loginButton?.removeAttribute('disabled');
     }
 }
 
 async function logOut() {
-    const logoutButton =
-        document.getElementById(
-            "signOutButton"
-        );
-
-    logoutButton?.setAttribute(
-        "disabled",
-        ""
-    );
+    const logoutButton = document.getElementById('signOutButton');
+    logoutButton?.setAttribute('disabled', '');
 
     try {
-        const {
-            error
-        } = await db.auth
-            .signOut();
+        const { error } = await db.auth.signOut();
 
         if (error) {
-            showToast(
-                "Could not log out. Please try again."
-            );
-
-            console.error(
-                "Logout error:",
-                error
-            );
-
+            showToast('Could not log out. Please try again.');
+            console.error('Logout error:', error);
             return;
         }
-
-        closeModal(
-            "accountModal"
-        );
-
-        showToast(
-            "Logged out."
-        );
     } catch (error) {
-        console.error(
-            "Unexpected logout error:",
-            error
-        );
-
-        showToast(
-            "Could not reach the account service."
-        );
+        console.error('Unexpected logout error:', error);
+        showToast('Could not reach the account service.');
     } finally {
-        logoutButton
-            ?.removeAttribute(
-                "disabled"
-            );
+        logoutButton?.removeAttribute('disabled');
     }
 }
 
 authForm?.addEventListener('submit', logIn);
 authSignupButton?.addEventListener('click', signUp);
-
-document
-    .getElementById('signOutButton')
-    ?.addEventListener('click', logOut);
+document.getElementById('signOutButton')?.addEventListener('click', logOut);
 
 async function initializeAuth() {
     try {
-        const {
-            data: {
-                session
-            },
-            error
-        } = await db.auth
-            .getSession();
+        const { data: { session }, error } = await db.auth.getSession();
 
         if (error) {
-            console.error(
-                "Session error:",
-                error
-            );
-
-            updateAuthUI(
-                null
-            );
-
+            console.error('Session error:', error);
+            updateAuthUI(null);
             return;
         }
 
-        updateAuthUI(
-            session
-        );
+        updateAuthUI(session);
     } catch (error) {
-        console.error(
-            "Unexpected session initialization error:",
-            error
-        );
-
-        updateAuthUI(
-            null
-        );
+        console.error('Unexpected session initialization error:', error);
+        updateAuthUI(null);
     }
 }
 
@@ -432,7 +243,10 @@ initializeAuth();
 db.auth.onAuthStateChange((event, session) => {
     console.log('Auth event:', event);
     updateAuthUI(session);
-    updateHistory();
+
+    if (session?.user) {
+        updateHistory();
+    }
 });
 
 // =====================================================
@@ -814,68 +628,50 @@ function getPulsarErrorPresentation(error) {
 // NAVIGATION
 // =====================================================
 
+const pageRoutes = {
+    dashboard: './launchpad.html',
+    launchpad: './launchpad.html',
+    nova: './nova.html',
+    pulsar: './pulsar.html',
+    history: './echoes.html',
+    echoes: './echoes.html'
+};
+
 function showView(name) {
-    $$(".view").forEach(view => {
-        view.classList.remove("active");
-    });
-
-    $$(".nav-item").forEach(item => {
-        item.classList.remove("active");
-    });
-
-    $(`#${name}View`)?.classList.add("active");
-
-    $(`.nav-item[data-view="${name}"]`)
-        ?.classList
-        .add("active");
-
-    const [eyebrow, title] =
-        pageInfo[name] ||
-        pageInfo.dashboard;
-
-    $("#pageEyebrow").textContent = eyebrow;
-    $("#pageTitle").textContent = title;
-
-    $("#sidebar")
-        ?.classList
-        .remove("open");
-
-    window.scrollTo({
-        top: 0,
-        behavior: "smooth"
-    });
-
-    if (name === "history") {
-        updateHistory();
-    }
+    const destination = pageRoutes[name] || pageRoutes.launchpad;
+    routeTo(destination);
 }
 
-$$("[data-view], [data-go], [data-view-link]")
-    .forEach(button => {
-        button.addEventListener(
-            "click",
-            event => {
-                event.preventDefault();
+$$('[data-view], [data-go], [data-view-link]')
+    .forEach(link => {
+        link.addEventListener('click', event => {
+            event.preventDefault();
 
-                const destination =
-                    button.dataset.view ||
-                    button.dataset.go ||
-                    button.dataset.viewLink;
+            const destination =
+                link.dataset.view ||
+                link.dataset.go ||
+                link.dataset.viewLink;
 
-                showView(destination);
-            }
-        );
+            showView(destination);
+        });
     });
 
-$("#mobileMenu")
-    ?.addEventListener(
-        "click",
-        () => {
-            $("#sidebar")
-                ?.classList
-                .toggle("open");
+function setActiveNavigation() {
+    const currentSection = document.body.dataset.section || '';
+
+    $$('[data-nav-section]').forEach(link => {
+        const active = link.dataset.navSection === currentSection;
+        link.classList.toggle('active', active);
+
+        if (active) {
+            link.setAttribute('aria-current', 'page');
+        } else {
+            link.removeAttribute('aria-current');
         }
-    );
+    });
+}
+
+setActiveNavigation();
 
 // =====================================================
 // NOVA DATABASE
@@ -2282,100 +2078,30 @@ function openHandoff() {
 // NOVA → PULSAR HANDOFF
 // =====================================================
 
-$("#continueToBlueprint")
-    ?.addEventListener(
-        "click",
-        () => {
-            if (!selectedTrack) {
-                return;
-            }
-
-            closeModal(
-                "handoffModal"
-            );
-
-            showView(
-                "pulsar"
-            );
-
-            $("#blueprintSong").value =
-                selectedTrack.title;
-
-            $("#blueprintArtist").value =
-                selectedTrack.artist;
-
-            const novaTargetDuration =
-                $("#targetDuration")
-                    ?.value;
-
-            if (
-                novaTargetDuration
-                &&
-                $("#pulsarEditDuration")
-            ) {
-                $("#pulsarEditDuration").value =
-                    novaTargetDuration;
-            }
-
-            const novaIntent =
-                $("#creativeIntent")
-                    ?.value
-                    ?.trim();
-
-            if (
-                novaIntent &&
-                !$("#pulsarEditingContext")
-                    ?.value
-                    ?.trim()
-            ) {
-                $("#pulsarEditingContext").value =
-                    novaIntent;
-            }
-
-            $("#selectedTrackName")
-                .textContent =
-                `${selectedTrack.title} — ${selectedTrack.artist}`;
-
-            const handoffTags =
-                selectedTrack
-                    .matchedTags
-                    .slice(
-                        0,
-                        2
-                    )
-                    .join(", ");
-
-            const handoffDuration =
-                Number(
-                    $("#pulsarEditDuration")
-                        ?.value
-                );
-
-            $("#selectedTrackMeta")
-                .textContent =
-                (
-                    `Nova score ${selectedTrack.score}`
-                    +
-                    (
-                        handoffTags
-                            ? ` · ${handoffTags}`
-                            : ""
-                    )
-                    +
-                    (
-                        Number.isFinite(handoffDuration)
-                            ? ` · ${formatTime(handoffDuration)} edit`
-                            : ""
-                    )
-                );
-
-            $("#selectedTrackBanner")
-                .classList
-                .remove("hidden");
+$('#continueToBlueprint')
+    ?.addEventListener('click', () => {
+        if (!selectedTrack) {
+            return;
         }
-    );
 
-$("#changeTrackButton")
+        const novaTargetDuration = $('#targetDuration')?.value || '30';
+        const novaIntent = $('#creativeIntent')?.value?.trim() || '';
+
+        sessionStorage.setItem(
+            'syncoraPulsarHandoff',
+            JSON.stringify({
+                selectedTrack,
+                currentNovaSessionId,
+                targetDuration: novaTargetDuration,
+                creativeIntent: novaIntent
+            })
+        );
+
+        closeModal('handoffModal');
+        routeTo('./pulsar-workflow.html');
+    });
+
+$('#changeTrackButton')
     ?.addEventListener(
         "click",
         () => {
@@ -3484,8 +3210,10 @@ $("#loadDemoBlueprint")
             $("#blueprintArtist").value =
                 "HOME";
 
-            $("#pulsarEditDuration").value =
-                "30";
+            if ($("#pulsarEditDuration")) {
+                $("#pulsarEditDuration").value =
+                    "30";
+            }
 
             $("#musicProfile").value =
                 "dynamic";
@@ -3523,7 +3251,7 @@ $("#blueprintForm")
                 $("#pulsarEditDuration")
                     ?.value
                 ||
-                "60";
+                "30";
 
             const editDurationSeconds =
                 editDurationValue === "full"
@@ -4636,6 +4364,16 @@ async function getHistory() {
 }
 
 function openSavedSignal(signal) {
+    if (!$("#blueprintForm")) {
+        sessionStorage.setItem(
+            "syncoraDeferredSignal",
+            JSON.stringify(signal)
+        );
+
+        routeTo("./pulsar-workflow.html");
+        return;
+    }
+
     currentBlueprint =
         structuredClone(
             signal
@@ -4732,10 +4470,6 @@ function openSavedSignal(signal) {
     }
 
     hidePulsarProgress();
-
-    showView(
-        "pulsar"
-    );
 
     renderBlueprint(
         currentBlueprint
@@ -5120,7 +4854,7 @@ function capitalize(text) {
 window.addEventListener(
     "scroll",
     () => {
-        $(".topbar")
+        $(".site-header")
             ?.classList
             .toggle(
                 "scrolled",
@@ -5173,10 +4907,139 @@ document.addEventListener(
 );
 
 // =====================================================
+// MULTI-PAGE BOOTSTRAP
+// =====================================================
+
+function setAuthMode(mode) {
+    if (PAGE_KIND !== 'auth') {
+        return;
+    }
+
+    const nextMode = mode === 'signup' ? 'signup' : 'login';
+    document.body.dataset.authMode = nextMode;
+
+    const copy = nextMode === 'signup'
+        ? {
+            eyebrow: 'Create your workspace',
+            title: 'Create a Syncora account.',
+            intro: 'Save Nova decisions, capture Signals, and return to your work from Echoes.'
+        }
+        : {
+            eyebrow: 'Welcome back',
+            title: 'Sign in to Syncora.',
+            intro: 'Your workspace, shortlists, and captured Signals stay connected to your account.'
+        };
+
+    $('#authEyebrow')?.replaceChildren(document.createTextNode(copy.eyebrow));
+    $('#authTitle')?.replaceChildren(document.createTextNode(copy.title));
+    $('#authIntro')?.replaceChildren(document.createTextNode(copy.intro));
+
+    $$('[data-auth-mode]').forEach(button => {
+        const active = button.dataset.authMode === nextMode;
+        button.classList.toggle('active', active);
+        button.setAttribute('aria-selected', active ? 'true' : 'false');
+    });
+
+    if (authPasswordInput) {
+        authPasswordInput.autocomplete = nextMode === 'signup' ? 'new-password' : 'current-password';
+        authPasswordInput.placeholder = nextMode === 'signup' ? 'Create a password' : 'Enter your password';
+    }
+
+    setAuthMessage();
+}
+
+$$('.auth-mode-button').forEach(button => {
+    button.addEventListener('click', () => setAuthMode(button.dataset.authMode));
+});
+
+function restorePulsarHandoff() {
+    if (CURRENT_PAGE !== 'pulsar-workflow' || !$('#blueprintForm')) {
+        return;
+    }
+
+    const raw = sessionStorage.getItem('syncoraPulsarHandoff');
+    if (!raw) return;
+
+    try {
+        const handoff = JSON.parse(raw);
+        const track = handoff?.selectedTrack;
+        if (!track?.title || !track?.artist) return;
+
+        selectedTrack = track;
+        currentNovaSessionId = handoff.currentNovaSessionId || null;
+
+        $('#blueprintSong').value = track.title;
+        $('#blueprintArtist').value = track.artist;
+
+        if ($('#pulsarEditDuration') && handoff.targetDuration) {
+            $('#pulsarEditDuration').value = handoff.targetDuration;
+        }
+
+        if ($('#pulsarEditingContext') && handoff.creativeIntent) {
+            $('#pulsarEditingContext').value = handoff.creativeIntent;
+        }
+
+        const tags = (track.matchedTags || []).slice(0, 2).join(', ');
+        $('#selectedTrackName').textContent = `${track.title} — ${track.artist}`;
+        $('#selectedTrackMeta').textContent =
+            `Nova score ${track.score ?? '—'}` + (tags ? ` · ${tags}` : '');
+        $('#selectedTrackBanner').classList.remove('hidden');
+    } catch (error) {
+        console.error('Could not restore Nova → Pulsar handoff:', error);
+    } finally {
+        sessionStorage.removeItem('syncoraPulsarHandoff');
+    }
+}
+
+function restoreDeferredSignal() {
+    if (CURRENT_PAGE !== 'pulsar-workflow' || !$('#blueprintForm')) {
+        return;
+    }
+
+    const raw = sessionStorage.getItem('syncoraDeferredSignal');
+    if (!raw) return;
+
+    try {
+        const signal = JSON.parse(raw);
+        openSavedSignal(signal);
+
+        window.requestAnimationFrame(() => {
+            $('#blueprintOutput')?.scrollIntoView({
+                behavior: 'smooth',
+                block: 'start'
+            });
+        });
+    } catch (error) {
+        console.error('Could not restore saved Signal:', error);
+    } finally {
+        sessionStorage.removeItem('syncoraDeferredSignal');
+    }
+}
+
+function initCosmicPointer() {
+    $$('.auth-visual, .module-intro, .hero-card').forEach(surface => {
+        surface.addEventListener('pointermove', event => {
+            const rect = surface.getBoundingClientRect();
+            const x = ((event.clientX - rect.left) / rect.width) * 100;
+            const y = ((event.clientY - rect.top) / rect.height) * 100;
+            surface.style.setProperty('--pointer-x', `${x}%`);
+            surface.style.setProperty('--pointer-y', `${y}%`);
+        });
+    });
+}
+
+setAuthMode(document.body.dataset.authMode || 'login');
+restorePulsarHandoff();
+restoreDeferredSignal();
+initCosmicPointer();
+
+// =====================================================
 // INITIAL SETUP
 // =====================================================
 
-updateHistory();
+if (PAGE_KIND === 'protected') {
+    updateHistory();
+}
 
 // =====================================================
 // FRONTEND POLISH — MODULE INTROS + NOVA JOURNEY
@@ -5355,28 +5218,7 @@ if (novaSongResults) {
     );
 }
 
-// =====================================================
-// NOVA → PULSAR WORKSPACE SCROLL
-// =====================================================
-
-$("#continueToBlueprint")
-    ?.addEventListener(
-        "click",
-        () => {
-            window.requestAnimationFrame(
-                () => {
-                    $("#pulsarWorkflow")
-                        ?.scrollIntoView({
-                            behavior: "smooth",
-                            block: "start"
-                        });
-                }
-            );
-        }
-    );
 
 // =====================================================
 // INITIAL NOVA JOURNEY STATE
 // =====================================================
-
-setNovaJourneyStep(1);
