@@ -1,0 +1,58 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="description" content="Revisit captured Syncora Signals from previous sessions.">
+    <title>Syncora — Echoes</title>
+    <link rel="stylesheet" href="style.css">
+</head>
+<body class="auth-pending protected-page echoes-page" data-page-kind="protected" data-page="echoes" data-section="echoes">
+    <div class="auth-gate" aria-hidden="true"><span class="gate-orbit"></span><strong>Syncora</strong></div>
+  
+<header class="site-header">
+    <nav class="site-nav" aria-label="Main navigation">
+        <a class="brand top-brand" href="launchpad.html" aria-label="Syncora Launchpad"><span class="brand-mark" aria-hidden="true"><i></i><i></i><i></i></span><span class="brand-copy"><strong>Syncora</strong><small>Music planning for editors</small></span></a>
+        <div class="top-nav-links"><a class="top-nav-link" data-nav-section="launchpad" href="launchpad.html">Launchpad</a><a class="top-nav-link" data-nav-section="nova" href="nova.html">Nova</a><a class="top-nav-link" data-nav-section="pulsar" href="pulsar.html">Pulsar</a><a class="top-nav-link active" data-nav-section="echoes" href="echoes.html">Echoes</a></div>
+        <button class="account-pill" id="topAccountButton" type="button" aria-label="Open account">
+        <span class="avatar nav-avatar" id="navAccountAvatar">S</span>
+        <span class="account-pill-copy"><strong id="navAccountName">Account</strong><small id="navAccountEmail">Signed in</small></span>
+        <span class="account-chevron" aria-hidden="true">⌄</span>
+        </button>
+    </nav>
+</header>
+    <main class="page-shell">
+<section class="workflow-masthead echoes-masthead">
+    <div><p class="eyebrow">Saved Signals</p><h1>Echoes.</h1><p>Return to Signals you captured in previous sessions and pick up the edit from where you left it.</p></div>
+</section>
+<div class="section-heading">
+<div>
+<p class="eyebrow">Saved Signals</p>
+<h2>Echoes</h2>
+<p>Revisit Signals captured during previous sessions.</p>
+</div>
+<button class="button danger small" id="clearHistory">Clear history</button>
+</div>
+<div class="history-grid" id="historyList"></div>
+</main>
+  
+<div class="modal-backdrop hidden" id="accountModal" role="dialog" aria-modal="true" aria-label="Syncora account">
+    <div class="modal account-modal">
+        <button class="modal-close" data-close="accountModal" aria-label="Close">×</button>
+        <div id="signedInAccount">
+        <p class="eyebrow">Account</p>
+        <h2 id="signedInName">Signed in</h2>
+        <p id="signedInEmail"></p>
+        <div class="account-summary">
+            <div><strong id="accountBlueprintCount">0</strong><span>Captured Signals</span></div>
+            <div><strong>Supabase</strong><span>Authentication</span></div>
+        </div>
+        <button class="button danger" id="signOutButton" type="button">Log out</button>
+        </div>
+    </div>
+</div>
+<div class="toast hidden" id="toast" role="status" aria-live="polite"></div>
+    <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<script src="script.js"></script>
+</body>
+</html>

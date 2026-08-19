@@ -1,0 +1,88 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="description" content="Pulsar turns a chosen song into an editor-facing Signal of meaningful musical moments.">
+    <title>Syncora — Pulsar</title>
+    <link rel="stylesheet" href="style.css">
+</head>
+<body class="auth-pending protected-page module-overview-page" data-page-kind="protected" data-page="pulsar" data-section="pulsar">
+    <div class="auth-gate" aria-hidden="true"><span class="gate-orbit"></span><strong>Syncora</strong></div>
+  
+<header class="site-header">
+    <nav class="site-nav" aria-label="Main navigation">
+        <a class="brand top-brand" href="launchpad.html" aria-label="Syncora Launchpad"><span class="brand-mark" aria-hidden="true"><i></i><i></i><i></i></span><span class="brand-copy"><strong>Syncora</strong><small>Music planning for editors</small></span></a>
+        <div class="top-nav-links"><a class="top-nav-link" data-nav-section="launchpad" href="launchpad.html">Launchpad</a><a class="top-nav-link" data-nav-section="nova" href="nova.html">Nova</a><a class="top-nav-link active" data-nav-section="pulsar" href="pulsar.html">Pulsar</a><a class="top-nav-link" data-nav-section="echoes" href="echoes.html">Echoes</a></div>
+        <button class="account-pill" id="topAccountButton" type="button" aria-label="Open account">
+        <span class="avatar nav-avatar" id="navAccountAvatar">S</span>
+        <span class="account-pill-copy"><strong id="navAccountName">Account</strong><small id="navAccountEmail">Signed in</small></span>
+        <span class="account-chevron" aria-hidden="true">⌄</span>
+        </button>
+    </nav>
+</header>
+    <main class="page-shell"><section aria-labelledby="pulsarIntroTitle" class="module-intro pulsar-intro overview-hero">
+<div class="module-intro-copy">
+<p class="eyebrow">Crown Jewel 02</p>
+<h2 id="pulsarIntroTitle">Turn a song into an editing map.</h2>
+<p class="module-intro-lead">Pulsar helps you see a song through the eyes of an editor.</p>
+<p class="module-intro-body">
+								A song can contain hundreds of beats, but only some moments deserve a major visual change. Pulsar organizes the useful ones into a Signal so you can see where the edit might cut, transition, accelerate, breathe, or shift direction without treating the suggestion as a command.
+							</p>
+<div class="module-intro-actions">
+<a class="button primary" href="pulsar-workflow.html">Create a Signal</a>
+</div>
+</div>
+<div aria-hidden="true" class="module-intro-visual pulsar-intro-visual">
+<div class="pulsar-demo-wave">
+<i style="height:25%"></i>
+<i style="height:48%"></i>
+<i style="height:72%"></i>
+<i style="height:35%"></i>
+<i style="height:86%"></i>
+<i style="height:58%"></i>
+<i style="height:96%"></i>
+<i style="height:46%"></i>
+<i style="height:68%"></i>
+<i style="height:40%"></i>
+<i style="height:82%"></i>
+<i style="height:52%"></i>
+</div>
+<div class="pulsar-demo-line"><span class="primary" style="left:20%"></span> <span class="secondary" style="left:47%"></span> <span class="primary" style="left:71%"></span></div>
+</div>
+<div class="module-use-cases">
+<div><span>Use it for</span> <strong>Cuts, reveals, transitions, speed changes, effects, and text.</strong></div>
+<div><span>Pulsar provides</span> <strong>Prioritized opportunities, not creative commands.</strong></div>
+<div><span>You keep</span> <strong>Full control over the final edit.</strong></div>
+</div>
+</section>
+<section class="editorial-section">
+    <div class="editorial-kicker"><p class="eyebrow">A Signal, not an autopilot</p><h2>Objective musical moments. Practical editing opportunities. Your judgment stays in control.</h2></div>
+    <div class="editorial-grid three-up">
+        <article class="editorial-card"><span>01</span><h3>Resolve the recording</h3><p>Pulsar matches the exact song you chose so the analysis stays attached to the right source.</p></article>
+        <article class="editorial-card"><span>02</span><h3>Surface meaningful change</h3><p>The Signal focuses on stronger musical transition regions instead of treating every beat as equally important.</p></article>
+        <article class="editorial-card"><span>03</span><h3>Translate for the timeline</h3><p>Each cue becomes an editor-facing opportunity for cuts, transitions, pacing, effects, and visual emphasis.</p></article>
+    </div>
+    <div class="center-cta"><a class="button primary pulsar-cta" href="pulsar-workflow.html">Create a Signal →</a></div>
+</section></main>
+  
+<div class="modal-backdrop hidden" id="accountModal" role="dialog" aria-modal="true" aria-label="Syncora account">
+    <div class="modal account-modal">
+        <button class="modal-close" data-close="accountModal" aria-label="Close">×</button>
+        <div id="signedInAccount">
+        <p class="eyebrow">Account</p>
+        <h2 id="signedInName">Signed in</h2>
+        <p id="signedInEmail"></p>
+        <div class="account-summary">
+            <div><strong id="accountBlueprintCount">0</strong><span>Captured Signals</span></div>
+            <div><strong>Supabase</strong><span>Authentication</span></div>
+        </div>
+        <button class="button danger" id="signOutButton" type="button">Log out</button>
+        </div>
+    </div>
+</div>
+<div class="toast hidden" id="toast" role="status" aria-live="polite"></div>
+    <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<script src="script.js"></script>
+</body>
+</html>

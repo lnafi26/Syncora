@@ -7,6 +7,9 @@ import math
 import re
 import time
 import threading
+import unicodedata
+import html as html_lib
+from difflib import SequenceMatcher
 import httpx
 from dotenv import dotenv_values
 from fastapi import FastAPI, HTTPException, Request
@@ -15,7 +18,6 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 from openai import OpenAI
 from pydantic import BaseModel, Field
-from ytmusicapi import YTMusic
 from huggingface_hub import InferenceClient
 from datetime import datetime, timezone
 from supabase import create_client
@@ -46,7 +48,7 @@ def get_setting(name, default=None):
 
 
 BUILD_ID = 'nova-hybrid-0.7.8'
-PULSAR_RESOLVER_BUILD_ID = 'pulsar-ytmusic-resolver-0.2.0'
+PULSAR_RESOLVER_BUILD_ID = 'pulsar-youtube-data-resolver-0.3.1'
 PULSAR_ANALYSIS_BUILD_ID = 'pulsar-signal-0.5.1'
 
 LLM_PROVIDER = (
@@ -230,6 +232,15 @@ LASTFM_API_URL = (
     'https://ws.audioscrobbler.com/2.0/'
 )
 
+YOUTUBE_API_KEY = get_setting(
+    'YOUTUBE_API_KEY'
+)
+
+YOUTUBE_API_BASE_URL = get_setting(
+    'YOUTUBE_API_BASE_URL',
+    'https://www.googleapis.com/youtube/v3',
+)
+
 CYANITE_ACCESS_TOKEN = get_setting(
     'CYANITE_ACCESS_TOKEN'
 )
@@ -283,6 +294,7 @@ print('Nova embedding model:', EMBEDDING_MODEL_ID)
 print('Pulsar resolver:', PULSAR_RESOLVER_BUILD_ID)
 print('Pulsar analysis:', PULSAR_ANALYSIS_BUILD_ID)
 print('Last.fm API key loaded:', bool(LASTFM_API_KEY))
+print('YouTube Data API key loaded:', bool(YOUTUBE_API_KEY))
 print('Cyanite access token loaded:', bool(CYANITE_ACCESS_TOKEN))
 print('==========================================')
 if not LASTFM_API_KEY:
@@ -539,9 +551,6 @@ def create_embedding_vectors(texts):
         )
 
     return vectors
-
-
-ytmusic = YTMusic()
 
 class NovaRequest(BaseModel):
     project_name: str = Field(min_length=1, max_length=200)
@@ -4004,43 +4013,1554 @@ def select_top_three(candidates):
     return recommendations
 
 def normalize_ytmusic_text(value: str):
-    value = str(value or '').casefold().strip()
-    value = re.sub('[^a-z0-9]+', ' ', value)
-    value = re.sub('\\s+', ' ', value)
+    """
+    Legacy function name retained because the Pulsar cache
+    already calls it. The normalization is provider-neutral.
+    """
+
+    value = html_lib.unescape(
+        str(value or '')
+    )
+
+    value = unicodedata.normalize(
+        'NFKD',
+        value,
+    )
+
+    value = ''.join(
+        character
+        for character in value
+        if not unicodedata.combining(
+            character
+        )
+    )
+
+    value = value.casefold().strip()
+    value = re.sub(
+        r'[^a-z0-9]+',
+        ' ',
+        value,
+    )
+    value = re.sub(
+        r'\s+',
+        ' ',
+        value,
+    )
+
     return value.strip()
 
-def score_ytmusic_result(result: dict, desired_title: str, desired_artist: str):
-    result_title = normalize_ytmusic_text(result.get('title', ''))
-    result_artists = [normalize_ytmusic_text(artist.get('name', '')) for artist in result.get('artists', []) or [] if isinstance(artist, dict)]
-    title_score = 0.0
-    artist_score = 0.0
-    if result_title == desired_title:
-        title_score = 0.6
-    elif desired_title and result_title and (desired_title in result_title or result_title in desired_title):
-        title_score = 0.35
-    if desired_artist in result_artists:
-        artist_score = 0.35
-    elif any((desired_artist and result_artist and (desired_artist in result_artist or result_artist in desired_artist) for result_artist in result_artists)):
-        artist_score = 0.2
-    playable_bonus = 0.05 if result.get('videoId') else 0.0
-    score = title_score + artist_score + playable_bonus
-    return round(min(score, 1.0), 4)
 
-def normalize_ytmusic_result(result: dict, match_score: float):
-    artists = [artist.get('name') for artist in result.get('artists', []) or [] if isinstance(artist, dict) and artist.get('name')]
-    artist_ids = [artist.get('id') for artist in result.get('artists', []) or [] if isinstance(artist, dict) and artist.get('id')]
-    album = result.get('album')
-    album_name = album.get('name') if isinstance(album, dict) else None
-    album_id = album.get('id') if isinstance(album, dict) else None
-    video_id = result.get('videoId')
-    youtube_music_url = f'https://music.youtube.com/watch?v={video_id}' if video_id else None
-    return {'title': result.get('title'), 'artists': artists, 'artist_ids': artist_ids, 'album': album_name, 'album_id': album_id, 'duration': result.get('duration'), 'duration_seconds': result.get('duration_seconds'), 'video_id': video_id, 'youtube_music_url': youtube_music_url, 'is_explicit': result.get('isExplicit'), 'match_score': match_score}
+def youtube_text_similarity(
+    value_a,
+    value_b,
+):
+    normalized_a = (
+        normalize_ytmusic_text(
+            value_a
+        )
+    )
+
+    normalized_b = (
+        normalize_ytmusic_text(
+            value_b
+        )
+    )
+
+    if (
+        not normalized_a
+        or
+        not normalized_b
+    ):
+        return 0.0
+
+    if (
+        normalized_a
+        ==
+        normalized_b
+    ):
+        return 1.0
+
+    if (
+        len(normalized_a) >= 4
+        and
+        len(normalized_b) >= 4
+        and
+        (
+            normalized_a
+            in
+            normalized_b
+            or
+            normalized_b
+            in
+            normalized_a
+        )
+    ):
+        containment_score = 0.92
+    else:
+        containment_score = 0.0
+
+    sequence_score = (
+        SequenceMatcher(
+            None,
+            normalized_a,
+            normalized_b,
+        )
+        .ratio()
+    )
+
+    tokens_a = set(
+        normalized_a.split()
+    )
+
+    tokens_b = set(
+        normalized_b.split()
+    )
+
+    token_union = (
+        tokens_a
+        |
+        tokens_b
+    )
+
+    token_score = (
+        len(
+            tokens_a
+            &
+            tokens_b
+        )
+        /
+        len(
+            token_union
+        )
+        if token_union
+        else 0.0
+    )
+
+    return round(
+        max(
+            containment_score,
+            sequence_score,
+            token_score,
+        ),
+        4,
+    )
+
+
+YOUTUBE_HARD_REJECT_MARKERS = [
+    'official music video',
+    'official video',
+    'music video',
+    'visualizer',
+    'visualiser',
+    'lyric video',
+    'lyrics video',
+    'official lyric video',
+    'official lyrics video',
+    'live performance',
+    'performance video',
+    'short film',
+    'trailer',
+    'teaser',
+    'behind the scenes',
+    'behind scenes',
+]
+
+YOUTUBE_ALTERNATE_VERSION_MARKERS = [
+    # Performance / alternate-recording variants. These are
+    # rejected unless the user explicitly included the marker
+    # in the requested song title.
+    'live',
+    'live at',
+    'live from',
+    'concert',
+    'unplugged',
+    'mtv unplugged',
+    'session',
+    'sessions',
+    'studio session',
+    'stripped',
+    'acoustic',
+    'acoustic version',
+    'piano version',
+    'orchestral version',
+    'alternate take',
+    'alternate version',
+    're recorded',
+    're-recorded',
+    're recording',
+    're-recording',
+
+    # Mix / speed / release variants.
+    'remix',
+    'sped up',
+    'slowed',
+    'slowed reverb',
+    'nightcore',
+    'instrumental',
+    'karaoke',
+    'cover',
+    'radio edit',
+    'extended mix',
+    'club mix',
+    'demo',
+    'demo version',
+    'remaster',
+    'remastered',
+]
+
+YOUTUBE_ART_TRACK_DESCRIPTION_MARKERS = [
+    'provided to youtube by',
+    'auto generated by youtube',
+    'auto-generated by youtube',
+]
+
+
+def strip_harmless_youtube_title_qualifiers(
+    value,
+):
+    text = html_lib.unescape(
+        str(value or '')
+    )
+
+    harmless_group_pattern = (
+        r'[\(\[\{]\s*'
+        r'(?:official\s+audio|audio\s+only|audio|explicit|clean|uncensored)'
+        r'\s*[\)\]\}]'
+    )
+
+    text = re.sub(
+        harmless_group_pattern,
+        ' ',
+        text,
+        flags=re.IGNORECASE,
+    )
+
+    text = re.sub(
+        r'\bofficial\s+audio\b',
+        ' ',
+        text,
+        flags=re.IGNORECASE,
+    )
+
+    text = re.sub(
+        r'\baudio\s+only\b',
+        ' ',
+        text,
+        flags=re.IGNORECASE,
+    )
+
+    return re.sub(
+        r'\s+',
+        ' ',
+        text,
+    ).strip()
+
+
+def remove_artist_prefix_from_youtube_title(
+    title,
+    desired_artist,
+):
+    normalized_title = (
+        normalize_ytmusic_text(
+            title
+        )
+    )
+
+    normalized_artist = (
+        normalize_ytmusic_text(
+            desired_artist
+        )
+    )
+
+    if (
+        normalized_artist
+        and
+        normalized_title.startswith(
+            normalized_artist
+            +
+            ' '
+        )
+    ):
+        return normalized_title[
+            len(normalized_artist):
+        ].strip()
+
+    return normalized_title
+
+
+def score_youtube_title_match(
+    candidate_title,
+    desired_title,
+    desired_artist,
+):
+    cleaned_candidate = (
+        strip_harmless_youtube_title_qualifiers(
+            candidate_title
+        )
+    )
+
+    normalized_candidate = (
+        normalize_ytmusic_text(
+            cleaned_candidate
+        )
+    )
+
+    candidate_without_artist = (
+        remove_artist_prefix_from_youtube_title(
+            cleaned_candidate,
+            desired_artist,
+        )
+    )
+
+    normalized_desired = (
+        normalize_ytmusic_text(
+            desired_title
+        )
+    )
+
+    return max(
+        youtube_text_similarity(
+            normalized_candidate,
+            normalized_desired,
+        ),
+        youtube_text_similarity(
+            candidate_without_artist,
+            normalized_desired,
+        ),
+    )
+
+
+def normalize_youtube_channel_artist(
+    channel_title,
+):
+    normalized = (
+        normalize_ytmusic_text(
+            channel_title
+        )
+    )
+
+    suffixes = [
+        ' topic',
+        ' vevo',
+        ' official',
+        ' official channel',
+        ' music',
+    ]
+
+    changed = True
+
+    while changed:
+        changed = False
+
+        for suffix in suffixes:
+            if normalized.endswith(
+                suffix
+            ):
+                normalized = normalized[
+                    :-len(suffix)
+                ].strip()
+
+                changed = True
+                break
+
+    return normalized
+
+
+def score_youtube_artist_channel_match(
+    channel_title,
+    desired_artist,
+):
+    channel_artist = (
+        normalize_youtube_channel_artist(
+            channel_title
+        )
+    )
+
+    desired_artist_normalized = (
+        normalize_ytmusic_text(
+            desired_artist
+        )
+    )
+
+    return youtube_text_similarity(
+        channel_artist,
+        desired_artist_normalized,
+    )
+
+
+def youtube_title_contains_marker(
+    normalized_title,
+    marker,
+):
+    normalized_marker = (
+        normalize_ytmusic_text(
+            marker
+        )
+    )
+
+    if not normalized_marker:
+        return False
+
+    padded_title = (
+        ' '
+        +
+        normalize_ytmusic_text(
+            normalized_title
+        )
+        +
+        ' '
+    )
+
+    padded_marker = (
+        ' '
+        +
+        normalized_marker
+        +
+        ' '
+    )
+
+    return (
+        padded_marker
+        in
+        padded_title
+    )
+
+
+def find_unrequested_youtube_version_marker(
+    candidate_title,
+    desired_title,
+):
+    normalized_candidate = (
+        normalize_ytmusic_text(
+            candidate_title
+        )
+    )
+
+    normalized_desired = (
+        normalize_ytmusic_text(
+            desired_title
+        )
+    )
+
+    for marker in (
+        YOUTUBE_ALTERNATE_VERSION_MARKERS
+    ):
+        normalized_marker = (
+            normalize_ytmusic_text(
+                marker
+            )
+        )
+
+        if (
+            youtube_title_contains_marker(
+                normalized_candidate,
+                normalized_marker,
+            )
+            and
+            not youtube_title_contains_marker(
+                normalized_desired,
+                normalized_marker,
+            )
+        ):
+            return marker
+
+    return None
+
+
+def classify_youtube_search_result(
+    item,
+    desired_title,
+    desired_artist,
+    search_query,
+    search_rank,
+):
+    if not isinstance(
+        item,
+        dict,
+    ):
+        return None
+
+    video_id = (
+        item.get('id', {})
+        .get('videoId')
+        if isinstance(
+            item.get('id'),
+            dict,
+        )
+        else None
+    )
+
+    snippet = (
+        item.get('snippet')
+        if isinstance(
+            item.get('snippet'),
+            dict,
+        )
+        else {}
+    )
+
+    title = html_lib.unescape(
+        str(
+            snippet.get('title')
+            or
+            ''
+        )
+    ).strip()
+
+    channel_title = html_lib.unescape(
+        str(
+            snippet.get('channelTitle')
+            or
+            ''
+        )
+    ).strip()
+
+    channel_id = (
+        snippet.get('channelId')
+        or
+        None
+    )
+
+    description = html_lib.unescape(
+        str(
+            snippet.get('description')
+            or
+            ''
+        )
+    ).strip()
+
+    if (
+        not video_id
+        or
+        not title
+        or
+        not channel_title
+    ):
+        return None
+
+    normalized_title = (
+        normalize_ytmusic_text(
+            title
+        )
+    )
+
+    normalized_channel = (
+        normalize_ytmusic_text(
+            channel_title
+        )
+    )
+
+    normalized_description = (
+        normalize_ytmusic_text(
+            description
+        )
+    )
+
+    normalized_artist = (
+        normalize_ytmusic_text(
+            desired_artist
+        )
+    )
+
+    title_match = (
+        score_youtube_title_match(
+            title,
+            desired_title,
+            desired_artist,
+        )
+    )
+
+    artist_channel_match = (
+        score_youtube_artist_channel_match(
+            channel_title,
+            desired_artist,
+        )
+    )
+
+    is_official_audio = (
+        'official audio'
+        in
+        normalized_title
+    )
+
+    hard_reject_marker = next(
+        (
+            marker
+            for marker
+            in YOUTUBE_HARD_REJECT_MARKERS
+            if youtube_title_contains_marker(
+                normalized_title,
+                marker,
+            )
+        ),
+        None,
+    )
+
+    alternate_marker = (
+        find_unrequested_youtube_version_marker(
+            title,
+            desired_title,
+        )
+    )
+
+    is_topic_channel = (
+        normalized_channel.endswith(
+            ' topic'
+        )
+        and
+        artist_channel_match >= 0.58
+    )
+
+    description_has_art_track_marker = any(
+        normalize_ytmusic_text(
+            marker
+        )
+        in
+        normalized_description
+        for marker
+        in YOUTUBE_ART_TRACK_DESCRIPTION_MARKERS
+    )
+
+    description_mentions_artist = (
+        bool(normalized_artist)
+        and
+        normalized_artist
+        in
+        normalized_description
+    )
+
+    is_art_track = (
+        is_topic_channel
+        or
+        (
+            description_has_art_track_marker
+            and
+            (
+                description_mentions_artist
+                or
+                artist_channel_match >= 0.68
+            )
+        )
+    )
+
+    accepted = False
+    resolver_type = None
+    resolver_priority = 99
+    rejection_reason = None
+
+    if hard_reject_marker:
+        rejection_reason = (
+            'audiovisual_variant:'
+            +
+            hard_reject_marker
+        )
+
+    elif alternate_marker:
+        rejection_reason = (
+            'alternate_recording:'
+            +
+            alternate_marker
+        )
+
+    elif title_match < 0.78:
+        rejection_reason = (
+            'title_match_too_low'
+        )
+
+    elif is_art_track:
+        accepted = True
+        resolver_type = (
+            'youtube_art_track'
+        )
+        resolver_priority = 1
+
+    elif (
+        is_official_audio
+        and
+        artist_channel_match >= 0.72
+    ):
+        accepted = True
+        resolver_type = (
+            'youtube_official_audio'
+        )
+        resolver_priority = 2
+
+    else:
+        rejection_reason = (
+            'not_canonical_audio_source'
+        )
+
+    match_score = (
+        title_match * 0.68
+        +
+        artist_channel_match * 0.22
+        +
+        (
+            0.08
+            if is_topic_channel
+            else 0.0
+        )
+        +
+        (
+            0.05
+            if description_has_art_track_marker
+            else 0.0
+        )
+        +
+        (
+            0.03
+            if is_official_audio
+            else 0.0
+        )
+    )
+
+    match_score = round(
+        min(
+            1.0,
+            match_score,
+        ),
+        4,
+    )
+
+    return {
+        'video_id':
+            str(video_id),
+
+        'title':
+            title,
+
+        'channel_title':
+            channel_title,
+
+        'channel_id':
+            channel_id,
+
+        'description':
+            description,
+
+        'title_match':
+            round(
+                title_match,
+                4,
+            ),
+
+        'artist_channel_match':
+            round(
+                artist_channel_match,
+                4,
+            ),
+
+        'is_topic_channel':
+            is_topic_channel,
+
+        'is_art_track':
+            is_art_track,
+
+        'is_official_audio':
+            is_official_audio,
+
+        'accepted':
+            accepted,
+
+        'resolver_type':
+            resolver_type,
+
+        'resolver_priority':
+            resolver_priority,
+
+        'rejection_reason':
+            rejection_reason,
+
+        'match_score':
+            match_score,
+
+        'search_query':
+            search_query,
+
+        'search_rank':
+            search_rank,
+    }
+
+
+def compact_youtube_candidate_debug(
+    candidate,
+):
+    if not isinstance(
+        candidate,
+        dict,
+    ):
+        return {}
+
+    return {
+        'video_id':
+            candidate.get(
+                'video_id'
+            ),
+
+        'title':
+            candidate.get(
+                'title'
+            ),
+
+        'channel_title':
+            candidate.get(
+                'channel_title'
+            ),
+
+        'accepted':
+            candidate.get(
+                'accepted'
+            ),
+
+        'resolver_type':
+            candidate.get(
+                'resolver_type'
+            ),
+
+        'rejection_reason':
+            candidate.get(
+                'rejection_reason'
+            ),
+
+        'title_match':
+            candidate.get(
+                'title_match'
+            ),
+
+        'artist_channel_match':
+            candidate.get(
+                'artist_channel_match'
+            ),
+
+        'match_score':
+            candidate.get(
+                'match_score'
+            ),
+
+        'search_query':
+            candidate.get(
+                'search_query'
+            ),
+    }
+
+
+def parse_youtube_duration_seconds(
+    value,
+):
+    text = str(
+        value
+        or
+        ''
+    ).strip()
+
+    match = re.fullmatch(
+        (
+            r'P'
+            r'(?:(?P<days>\d+)D)?'
+            r'(?:T'
+            r'(?:(?P<hours>\d+)H)?'
+            r'(?:(?P<minutes>\d+)M)?'
+            r'(?:(?P<seconds>\d+(?:\.\d+)?)S)?'
+            r')?'
+        ),
+        text,
+    )
+
+    if not match:
+        return None
+
+    days = float(
+        match.group('days')
+        or
+        0
+    )
+
+    hours = float(
+        match.group('hours')
+        or
+        0
+    )
+
+    minutes = float(
+        match.group('minutes')
+        or
+        0
+    )
+
+    seconds = float(
+        match.group('seconds')
+        or
+        0
+    )
+
+    total = (
+        days * 86400
+        +
+        hours * 3600
+        +
+        minutes * 60
+        +
+        seconds
+    )
+
+    if total <= 0:
+        return None
+
+    return int(
+        round(total)
+    )
+
+
+def format_youtube_duration(
+    duration_seconds,
+):
+    if not isinstance(
+        duration_seconds,
+        (int, float),
+    ):
+        return None
+
+    duration_seconds = max(
+        0,
+        int(
+            round(
+                duration_seconds
+            )
+        ),
+    )
+
+    hours, remainder = divmod(
+        duration_seconds,
+        3600,
+    )
+
+    minutes, seconds = divmod(
+        remainder,
+        60,
+    )
+
+    if hours:
+        return (
+            f'{hours}:'
+            f'{minutes:02d}:'
+            f'{seconds:02d}'
+        )
+
+    return (
+        f'{minutes}:'
+        f'{seconds:02d}'
+    )
+
+
+async def youtube_api_get(
+    http_client,
+    path,
+    params,
+    stage,
+):
+    if not YOUTUBE_API_KEY:
+        raise HTTPException(
+            status_code=500,
+            detail={
+                'error':
+                    (
+                        'YOUTUBE_API_KEY was not '
+                        'found.'
+                    ),
+
+                'message':
+                    (
+                        'Pulsar cannot resolve new '
+                        'recordings until the YouTube '
+                        'Data API key is configured.'
+                    ),
+
+                'stage':
+                    stage,
+
+                'retryable':
+                    False,
+
+                'resolver':
+                    'youtube_data_api',
+
+                'build':
+                    PULSAR_RESOLVER_BUILD_ID,
+            }
+        )
+
+    request_params = dict(
+        params
+        or
+        {}
+    )
+
+    request_params[
+        'key'
+    ] = YOUTUBE_API_KEY
+
+    try:
+        response = await http_client.get(
+            (
+                YOUTUBE_API_BASE_URL.rstrip('/')
+                +
+                '/'
+                +
+                path.lstrip('/')
+            ),
+            params=request_params,
+        )
+
+    except httpx.TimeoutException:
+        raise HTTPException(
+            status_code=504,
+            detail={
+                'error':
+                    (
+                        'The YouTube Data API '
+                        'request timed out.'
+                    ),
+
+                'stage':
+                    stage,
+
+                'retryable':
+                    True,
+
+                'resolver':
+                    'youtube_data_api',
+
+                'build':
+                    PULSAR_RESOLVER_BUILD_ID,
+            }
+        )
+
+    except httpx.RequestError as error:
+        raise HTTPException(
+            status_code=502,
+            detail={
+                'error':
+                    (
+                        'Pulsar could not reach the '
+                        'YouTube Data API.'
+                    ),
+
+                'technical_error':
+                    str(error),
+
+                'stage':
+                    stage,
+
+                'retryable':
+                    True,
+
+                'resolver':
+                    'youtube_data_api',
+
+                'build':
+                    PULSAR_RESOLVER_BUILD_ID,
+            }
+        )
+
+    try:
+        data = response.json()
+    except ValueError:
+        data = None
+
+    if response.is_error:
+        google_error = (
+            data.get('error')
+            if isinstance(
+                data,
+                dict,
+            )
+            and
+            isinstance(
+                data.get('error'),
+                dict,
+            )
+            else {}
+        )
+
+        google_message = (
+            google_error.get(
+                'message'
+            )
+            or
+            (
+                'The YouTube Data API '
+                'rejected the request.'
+            )
+        )
+
+        google_reasons = []
+
+        for item in (
+            google_error.get(
+                'errors'
+            )
+            or
+            []
+        ):
+            if not isinstance(
+                item,
+                dict,
+            ):
+                continue
+
+            reason = item.get(
+                'reason'
+            )
+
+            if reason:
+                google_reasons.append(
+                    str(reason)
+                )
+
+        raise HTTPException(
+            status_code=(
+                429
+                if any(
+                    'quota'
+                    in
+                    reason.casefold()
+                    for reason
+                    in google_reasons
+                )
+                else 502
+            ),
+            detail={
+                'error':
+                    (
+                        'YouTube Data API search '
+                        'could not be completed.'
+                    ),
+
+                'message':
+                    google_message,
+
+                'youtube_status_code':
+                    response.status_code,
+
+                'youtube_reasons':
+                    google_reasons,
+
+                'stage':
+                    stage,
+
+                'retryable':
+                    response.status_code >= 500,
+
+                'resolver':
+                    'youtube_data_api',
+
+                'build':
+                    PULSAR_RESOLVER_BUILD_ID,
+            }
+        )
+
+    if not isinstance(
+        data,
+        dict,
+    ):
+        raise HTTPException(
+            status_code=502,
+            detail={
+                'error':
+                    (
+                        'YouTube Data API returned '
+                        'an unreadable response.'
+                    ),
+
+                'stage':
+                    stage,
+
+                'retryable':
+                    True,
+
+                'resolver':
+                    'youtube_data_api',
+
+                'build':
+                    PULSAR_RESOLVER_BUILD_ID,
+            }
+        )
+
+    return data
+
+
+async def search_youtube_data_api(
+    http_client,
+    query,
+    max_results=25,
+):
+    data = await youtube_api_get(
+        http_client=http_client,
+        path='search',
+        params={
+            'part':
+                'snippet',
+
+            'type':
+                'video',
+
+            'q':
+                query,
+
+            'maxResults':
+                max_results,
+
+            'order':
+                'relevance',
+
+            'safeSearch':
+                'none',
+
+            'videoCategoryId':
+                '10',
+        },
+        # Keep the legacy stage name so the current
+        # frontend can display the existing resolver
+        # error treatment without a JS migration.
+        stage='pulsar_ytmusic_search',
+    )
+
+    items = data.get(
+        'items'
+    )
+
+    if not isinstance(
+        items,
+        list,
+    ):
+        return []
+
+    return items
+
+
+async def get_youtube_video_details(
+    http_client,
+    video_id,
+):
+    data = await youtube_api_get(
+        http_client=http_client,
+        path='videos',
+        params={
+            'part':
+                'snippet,contentDetails,status',
+
+            'id':
+                str(video_id),
+
+            'maxResults':
+                1,
+        },
+        stage='pulsar_ytmusic_resolution',
+    )
+
+    items = data.get(
+        'items'
+    )
+
+    if (
+        not isinstance(
+            items,
+            list,
+        )
+        or
+        not items
+    ):
+        return None
+
+    video = items[0]
+
+    return (
+        video
+        if isinstance(
+            video,
+            dict,
+        )
+        else None
+    )
+
+
+def choose_best_youtube_candidate(
+    candidates,
+):
+    accepted = [
+        candidate
+        for candidate
+        in candidates
+        if (
+            isinstance(
+                candidate,
+                dict,
+            )
+            and
+            candidate.get(
+                'accepted'
+            )
+        )
+    ]
+
+    if not accepted:
+        return None
+
+    accepted.sort(
+        key=lambda candidate: (
+            int(
+                candidate.get(
+                    'resolver_priority'
+                )
+                or
+                99
+            ),
+            -float(
+                candidate.get(
+                    'match_score'
+                )
+                or
+                0.0
+            ),
+            int(
+                candidate.get(
+                    'search_rank'
+                )
+                or
+                999
+            ),
+        )
+    )
+
+    return accepted[0]
+
+
+def build_resolved_youtube_track(
+    payload,
+    candidate,
+    video_details,
+):
+    snippet = (
+        video_details.get(
+            'snippet'
+        )
+        if isinstance(
+            video_details,
+            dict,
+        )
+        and
+        isinstance(
+            video_details.get(
+                'snippet'
+            ),
+            dict,
+        )
+        else {}
+    )
+
+    content_details = (
+        video_details.get(
+            'contentDetails'
+        )
+        if isinstance(
+            video_details,
+            dict,
+        )
+        and
+        isinstance(
+            video_details.get(
+                'contentDetails'
+            ),
+            dict,
+        )
+        else {}
+    )
+
+    status = (
+        video_details.get(
+            'status'
+        )
+        if isinstance(
+            video_details,
+            dict,
+        )
+        and
+        isinstance(
+            video_details.get(
+                'status'
+            ),
+            dict,
+        )
+        else {}
+    )
+
+    video_id = str(
+        candidate.get(
+            'video_id'
+        )
+    )
+
+    actual_title = html_lib.unescape(
+        str(
+            snippet.get('title')
+            or
+            candidate.get('title')
+            or
+            payload.title
+        )
+    ).strip()
+
+    actual_channel_title = html_lib.unescape(
+        str(
+            snippet.get(
+                'channelTitle'
+            )
+            or
+            candidate.get(
+                'channel_title'
+            )
+            or
+            ''
+        )
+    ).strip()
+
+    duration_seconds = (
+        parse_youtube_duration_seconds(
+            content_details.get(
+                'duration'
+            )
+        )
+    )
+
+    youtube_url = (
+        'https://www.youtube.com/'
+        f'watch?v={video_id}'
+    )
+
+    return {
+        # Keep the editor-facing title and artist exactly
+        # as requested. The raw YouTube metadata is retained
+        # separately for diagnostics.
+        'title':
+            payload.title.strip(),
+
+        'artists': [
+            payload.artist.strip()
+        ],
+
+        'artist_ids':
+            [],
+
+        'album':
+            None,
+
+        'album_id':
+            None,
+
+        'duration':
+            format_youtube_duration(
+                duration_seconds
+            ),
+
+        'duration_seconds':
+            duration_seconds,
+
+        'video_id':
+            video_id,
+
+        'youtube_url':
+            youtube_url,
+
+        # Retained for backward compatibility with cached
+        # track payloads. New resolution does not depend on
+        # music.youtube.com.
+        'youtube_music_url':
+            youtube_url,
+
+        'is_explicit':
+            None,
+
+        'match_score':
+            candidate.get(
+                'match_score'
+            ),
+
+        'resolver_type':
+            candidate.get(
+                'resolver_type'
+            ),
+
+        'canonical_audio':
+            True,
+
+        'youtube_title':
+            actual_title,
+
+        'channel_title':
+            actual_channel_title,
+
+        'channel_id':
+            (
+                snippet.get(
+                    'channelId'
+                )
+                or
+                candidate.get(
+                    'channel_id'
+                )
+            ),
+
+        'licensed_content':
+            bool(
+                content_details.get(
+                    'licensedContent'
+                )
+            ),
+
+        'embeddable':
+            status.get(
+                'embeddable'
+            ),
+
+        'resolver_evidence': {
+            'topic_channel':
+                candidate.get(
+                    'is_topic_channel'
+                ),
+
+            'art_track':
+                candidate.get(
+                    'is_art_track'
+                ),
+
+            'official_audio':
+                candidate.get(
+                    'is_official_audio'
+                ),
+
+            'title_match':
+                candidate.get(
+                    'title_match'
+                ),
+
+            'artist_channel_match':
+                candidate.get(
+                    'artist_channel_match'
+                ),
+
+            'search_query':
+                candidate.get(
+                    'search_query'
+                ),
+        },
+    }
+
 
 @app.post('/pulsar/resolve')
-async def pulsar_resolve(payload: PulsarResolveRequest):
+async def pulsar_resolve(
+    payload: PulsarResolveRequest
+):
     start_time = time.perf_counter()
-    desired_title = normalize_ytmusic_text(payload.title)
-    desired_artist = normalize_ytmusic_text(payload.artist)
 
     cached_entry = (
         get_cached_pulsar_track_by_title_artist(
@@ -4097,6 +5617,17 @@ async def pulsar_resolve(payload: PulsarResolveRequest):
                     artists
                 ]
 
+            youtube_url = (
+                cached_track.get(
+                    'youtube_url'
+                )
+                or
+                (
+                    'https://www.youtube.com/'
+                    f'watch?v={video_id}'
+                )
+            )
+
             resolved_track = {
                 'title':
                     (
@@ -4140,9 +5671,10 @@ async def pulsar_resolve(payload: PulsarResolveRequest):
                     ),
 
                 'video_id':
-                    str(
-                        video_id
-                    ),
+                    str(video_id),
+
+                'youtube_url':
+                    youtube_url,
 
                 'youtube_music_url':
                     (
@@ -4150,14 +5682,7 @@ async def pulsar_resolve(payload: PulsarResolveRequest):
                             'youtube_music_url'
                         )
                         or
-                        cached_track.get(
-                            'youtube_url'
-                        )
-                        or
-                        (
-                            'https://music.youtube.com/'
-                            f'watch?v={video_id}'
-                        )
+                        youtube_url
                     ),
 
                 'is_explicit':
@@ -4177,14 +5702,56 @@ async def pulsar_resolve(payload: PulsarResolveRequest):
                         or
                         1.0
                     ),
+
+                'resolver_type':
+                    (
+                        cached_track.get(
+                            'resolver_type'
+                        )
+                        or
+                        'legacy_ytmusic_song_cache'
+                    ),
+
+                'canonical_audio':
+                    cached_track.get(
+                        'canonical_audio',
+                        True,
+                    ),
+
+                'youtube_title':
+                    cached_track.get(
+                        'youtube_title'
+                    ),
+
+                'channel_title':
+                    cached_track.get(
+                        'channel_title'
+                    ),
+
+                'channel_id':
+                    cached_track.get(
+                        'channel_id'
+                    ),
+
+                'licensed_content':
+                    cached_track.get(
+                        'licensed_content'
+                    ),
+
+                'resolver_evidence':
+                    cached_track.get(
+                        'resolver_evidence'
+                    ),
             }
 
             total_ms = round(
                 (
                     time.perf_counter()
-                    - start_time
+                    -
+                    start_time
                 )
-                * 1000
+                *
+                1000
             )
 
             print(
@@ -4239,31 +5806,405 @@ async def pulsar_resolve(payload: PulsarResolveRequest):
                         total_ms,
                 },
             }
-    query = f'{payload.artist} {payload.title}'.strip()
-    try:
-        search_results = await asyncio.to_thread(ytmusic.search, query, filter='songs', limit=20)
-    except Exception as error:
-        raise HTTPException(status_code=502, detail={'error': 'Pulsar could not search YouTube Music.', 'stage': 'pulsar_ytmusic_search', 'technical_error': str(error), 'build': PULSAR_RESOLVER_BUILD_ID})
-    if not search_results:
-        raise HTTPException(status_code=404, detail={'error': 'YouTube Music returned no song results.', 'stage': 'pulsar_ytmusic_search', 'query': query, 'build': PULSAR_RESOLVER_BUILD_ID})
-    scored_results = []
-    for result in search_results:
-        if not isinstance(result, dict):
-            continue
-        match_score = score_ytmusic_result(result, desired_title, desired_artist)
-        scored_results.append((match_score, result))
-    scored_results.sort(key=lambda item: item[0], reverse=True)
-    if not scored_results:
-        raise HTTPException(status_code=404, detail={'error': 'Pulsar could not identify a usable YouTube Music result.', 'stage': 'pulsar_ytmusic_match', 'build': PULSAR_RESOLVER_BUILD_ID})
-    best_score, best_result = scored_results[0]
-    if best_score < 0.8:
-        candidates = [normalize_ytmusic_result(result, score) for score, result in scored_results[:5]]
-        raise HTTPException(status_code=404, detail={'error': 'YouTube Music returned results, but Pulsar could not confidently match the selected Nova song.', 'stage': 'pulsar_ytmusic_match', 'requested': {'title': payload.title, 'artist': payload.artist}, 'best_match_score': best_score, 'candidates': candidates, 'build': PULSAR_RESOLVER_BUILD_ID})
-    resolved_track = normalize_ytmusic_result(best_result, best_score)
-    if not resolved_track.get('video_id'):
-        raise HTTPException(status_code=404, detail={'error': 'The matched YouTube Music song does not have a usable video ID.', 'stage': 'pulsar_ytmusic_match', 'build': PULSAR_RESOLVER_BUILD_ID})
-    total_ms = round((time.perf_counter() - start_time) * 1000)
-    return {'build': PULSAR_RESOLVER_BUILD_ID, 'resolved': True, 'source': 'YouTube Music', 'requested': {'title': payload.title, 'artist': payload.artist, 'mbid': payload.mbid}, 'track': resolved_track, 'timing_ms': {'total': total_ms}}
+
+    if not YOUTUBE_API_KEY:
+        raise HTTPException(
+            status_code=500,
+            detail={
+                'error':
+                    'YOUTUBE_API_KEY was not found.',
+
+                'message':
+                    (
+                        'Add YOUTUBE_API_KEY to the '
+                        'backend environment before '
+                        'resolving uncached tracks.'
+                    ),
+
+                'stage':
+                    'pulsar_ytmusic_search',
+
+                'retryable':
+                    False,
+
+                'resolver':
+                    'youtube_data_api',
+
+                'build':
+                    PULSAR_RESOLVER_BUILD_ID,
+            }
+        )
+
+    generic_query = (
+        f'{payload.artist} {payload.title}'
+        .strip()
+    )
+
+    topic_query = (
+        f'{payload.artist} - Topic '
+        f'{payload.title}'
+    ).strip()
+
+    all_candidates = []
+    seen_video_ids = set()
+    search_queries = []
+
+    async with httpx.AsyncClient(
+        timeout=20.0,
+        follow_redirects=True,
+        trust_env=False,
+    ) as http_client:
+        generic_results = (
+            await search_youtube_data_api(
+                http_client=http_client,
+                query=generic_query,
+                max_results=25,
+            )
+        )
+
+        search_queries.append(
+            generic_query
+        )
+
+        for index, item in enumerate(
+            generic_results,
+            start=1,
+        ):
+            candidate = (
+                classify_youtube_search_result(
+                    item=item,
+                    desired_title=payload.title,
+                    desired_artist=payload.artist,
+                    search_query=generic_query,
+                    search_rank=index,
+                )
+            )
+
+            if not candidate:
+                continue
+
+            video_id = candidate.get(
+                'video_id'
+            )
+
+            if video_id in seen_video_ids:
+                continue
+
+            seen_video_ids.add(
+                video_id
+            )
+
+            all_candidates.append(
+                candidate
+            )
+
+        art_track_candidates = [
+            candidate
+            for candidate
+            in all_candidates
+            if (
+                candidate.get(
+                    'accepted'
+                )
+                and
+                candidate.get(
+                    'resolver_type'
+                )
+                ==
+                'youtube_art_track'
+            )
+        ]
+
+        # Even when a good Official Audio fallback exists,
+        # make one targeted Topic search before using it.
+        # This preserves Art Track / Topic as the primary
+        # resolver policy requested for Pulsar.
+        if not art_track_candidates:
+            topic_results = (
+                await search_youtube_data_api(
+                    http_client=http_client,
+                    query=topic_query,
+                    max_results=20,
+                )
+            )
+
+            search_queries.append(
+                topic_query
+            )
+
+            for index, item in enumerate(
+                topic_results,
+                start=1,
+            ):
+                candidate = (
+                    classify_youtube_search_result(
+                        item=item,
+                        desired_title=payload.title,
+                        desired_artist=payload.artist,
+                        search_query=topic_query,
+                        search_rank=index,
+                    )
+                )
+
+                if not candidate:
+                    continue
+
+                video_id = candidate.get(
+                    'video_id'
+                )
+
+                if video_id in seen_video_ids:
+                    continue
+
+                seen_video_ids.add(
+                    video_id
+                )
+
+                all_candidates.append(
+                    candidate
+                )
+
+        best_candidate = (
+            choose_best_youtube_candidate(
+                all_candidates
+            )
+        )
+
+        if not best_candidate:
+            debug_candidates = sorted(
+                all_candidates,
+                key=lambda candidate: (
+                    -float(
+                        candidate.get(
+                            'title_match'
+                        )
+                        or
+                        0.0
+                    ),
+                    -float(
+                        candidate.get(
+                            'artist_channel_match'
+                        )
+                        or
+                        0.0
+                    ),
+                    int(
+                        candidate.get(
+                            'search_rank'
+                        )
+                        or
+                        999
+                    ),
+                ),
+            )[:8]
+
+            raise HTTPException(
+                status_code=404,
+                detail={
+                    'error':
+                        (
+                            'Pulsar could not identify '
+                            'a trustworthy canonical '
+                            'audio source on YouTube.'
+                        ),
+
+                    'message':
+                        (
+                            'Pulsar found YouTube results, '
+                            'but none were a confident Art '
+                            'Track / Topic match or an '
+                            'Official Audio upload from the '
+                            'artist channel. Music videos '
+                            'and alternate recordings were '
+                            'not used.'
+                        ),
+
+                    # Legacy stage name retained for the
+                    # current frontend error mapping.
+                    'stage':
+                        'pulsar_ytmusic_match',
+
+                    'requested': {
+                        'title':
+                            payload.title,
+
+                        'artist':
+                            payload.artist,
+
+                        'mbid':
+                            payload.mbid,
+                    },
+
+                    'queries':
+                        search_queries,
+
+                    'candidates': [
+                        compact_youtube_candidate_debug(
+                            candidate
+                        )
+                        for candidate
+                        in debug_candidates
+                    ],
+
+                    'retryable':
+                        False,
+
+                    'resolver':
+                        'youtube_data_api',
+
+                    'build':
+                        PULSAR_RESOLVER_BUILD_ID,
+                }
+            )
+
+        video_details = (
+            await get_youtube_video_details(
+                http_client=http_client,
+                video_id=best_candidate[
+                    'video_id'
+                ],
+            )
+        )
+
+    if not video_details:
+        raise HTTPException(
+            status_code=404,
+            detail={
+                'error':
+                    (
+                        'The matched YouTube audio '
+                        'source is no longer available.'
+                    ),
+
+                'stage':
+                    'pulsar_ytmusic_resolution',
+
+                'video_id':
+                    best_candidate.get(
+                        'video_id'
+                    ),
+
+                'retryable':
+                    True,
+
+                'resolver':
+                    'youtube_data_api',
+
+                'build':
+                    PULSAR_RESOLVER_BUILD_ID,
+            }
+        )
+
+    resolved_track = (
+        build_resolved_youtube_track(
+            payload=payload,
+            candidate=best_candidate,
+            video_details=video_details,
+        )
+    )
+
+    if not resolved_track.get(
+        'duration_seconds'
+    ):
+        raise HTTPException(
+            status_code=404,
+            detail={
+                'error':
+                    (
+                        'The matched canonical audio '
+                        'source did not expose a usable '
+                        'duration.'
+                    ),
+
+                'stage':
+                    'pulsar_ytmusic_resolution',
+
+                'video_id':
+                    resolved_track.get(
+                        'video_id'
+                    ),
+
+                'retryable':
+                    False,
+
+                'resolver':
+                    'youtube_data_api',
+
+                'build':
+                    PULSAR_RESOLVER_BUILD_ID,
+            }
+        )
+
+    total_ms = round(
+        (
+            time.perf_counter()
+            -
+            start_time
+        )
+        *
+        1000
+    )
+
+    print(
+        '[PULSAR YOUTUBE RESOLVE] '
+        f'{payload.title} — '
+        f'{payload.artist} -> '
+        f'{resolved_track["video_id"]} '
+        f'({resolved_track["resolver_type"]}, '
+        f'{resolved_track["channel_title"]})'
+    )
+
+    return {
+        'build':
+            PULSAR_RESOLVER_BUILD_ID,
+
+        'resolved':
+            True,
+
+        'source':
+            'YouTube Data API v3',
+
+        'requested': {
+            'title':
+                payload.title,
+
+            'artist':
+                payload.artist,
+
+            'mbid':
+                payload.mbid,
+        },
+
+        'track':
+            resolved_track,
+
+        'resolver': {
+            'type':
+                resolved_track.get(
+                    'resolver_type'
+                ),
+
+            'canonical_audio':
+                True,
+
+            'policy':
+                (
+                    'Art Track / Topic first; '
+                    'Official Audio on artist '
+                    'channel second; audiovisual '
+                    'and alternate versions rejected.'
+                ),
+
+            'queries':
+                search_queries,
+        },
+
+        'timing_ms': {
+            'total':
+                total_ms,
+        },
+    }
+
 
 @app.post('/pulsar/analyze/start')
 async def pulsar_analyze_start(payload: PulsarResolveRequest):
@@ -4272,7 +6213,7 @@ async def pulsar_analyze_start(payload: PulsarResolveRequest):
     resolved_track = resolution.get('track', {})
     video_id = resolved_track.get('video_id')
     if not video_id:
-        raise HTTPException(status_code=502, detail={'error': 'Pulsar resolved the song but did not receive a YouTube video ID.', 'stage': 'pulsar_ytmusic_resolution', 'build': PULSAR_ANALYSIS_BUILD_ID})
+        raise HTTPException(status_code=502, detail={'error': 'Pulsar resolved the song but did not receive a usable YouTube video ID.', 'stage': 'pulsar_ytmusic_resolution', 'build': PULSAR_ANALYSIS_BUILD_ID})
     youtube_url = f'https://www.youtube.com/watch?v={video_id}'
 
     track_payload = {
@@ -4284,6 +6225,13 @@ async def pulsar_analyze_start(payload: PulsarResolveRequest):
         'video_id': video_id,
         'youtube_url': youtube_url,
         'resolver_match_score': resolved_track.get('match_score'),
+        'resolver_type': resolved_track.get('resolver_type'),
+        'canonical_audio': resolved_track.get('canonical_audio'),
+        'youtube_title': resolved_track.get('youtube_title'),
+        'channel_title': resolved_track.get('channel_title'),
+        'channel_id': resolved_track.get('channel_id'),
+        'licensed_content': resolved_track.get('licensed_content'),
+        'resolver_evidence': resolved_track.get('resolver_evidence'),
     }
 
     cached_entry = get_cached_pulsar_track_by_video_id(
@@ -4297,7 +6245,7 @@ async def pulsar_analyze_start(payload: PulsarResolveRequest):
 
         if cached_library_track_id:
             # Refresh the stored track metadata in case
-            # YouTube Music returned anything newer.
+            # The resolver returned newer YouTube metadata.
             cache_pulsar_resolution(
                 video_id=video_id,
                 library_track_id=cached_library_track_id,
@@ -4403,7 +6351,6 @@ async def pulsar_analyze_start(payload: PulsarResolveRequest):
             'total': total_ms
         },
     }
-
 
 @app.get('/pulsar/analyze/status/{library_track_id}')
 async def pulsar_analyze_status(
