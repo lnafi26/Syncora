@@ -1,66 +1,233 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-  <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <meta name="description" content="Sign in or create a Syncora account to plan music and editing Signals.">
-  <title>Syncora — Sign in</title>
-  <link rel="stylesheet" href="style.css">
+	<meta charset="UTF-8">
+	<meta name="viewport" content="width=device-width, initial-scale=1.0">
+	<meta name="description" content="Syncora helps video editors discover fitting music and turn songs into practical editing Signals.">
+	<title>Syncora — Music planning for editors</title>
+	<link rel="stylesheet" href="style.css">
 </head>
-<body class="auth-pending auth-page" data-page-kind="auth" data-page="auth" data-auth-mode="login">
-  <div class="auth-gate" aria-hidden="true"><span class="gate-orbit"></span><strong>Syncora</strong></div>
-  <main class="auth-layout">
-    <section class="auth-visual" aria-label="Syncora introduction">
-      <div class="auth-starfield auth-stars-one" aria-hidden="true"></div>
-      <div class="auth-starfield auth-stars-two" aria-hidden="true"></div>
-      <div class="auth-orb auth-orb-one" aria-hidden="true"></div>
-      <div class="auth-orb auth-orb-two" aria-hidden="true"></div>
-      <a class="brand auth-brand" href="index.html" aria-label="Syncora home"><span class="brand-mark" aria-hidden="true"><i></i><i></i><i></i></span><span class="brand-copy"><strong>Syncora</strong><small>Music planning for editors</small></span></a>
-      <div class="auth-visual-copy">
-        <p class="eyebrow">Music planning for video editors</p>
-        <h1>Find the signal in the noise.</h1>
-        <p>Syncora helps you choose music with intention, understand the moments that matter, and arrive at the timeline with a plan.</p>
-        <div class="auth-constellation" aria-hidden="true">
-          <span class="constellation-node node-a"></span><span class="constellation-node node-b"></span><span class="constellation-node node-c"></span><span class="constellation-node node-d"></span>
-          <i class="constellation-line line-a"></i><i class="constellation-line line-b"></i><i class="constellation-line line-c"></i>
-        </div>
-      </div>
-      <div class="auth-feature-strip">
-        <div><span>Nova</span><strong>Discover the right track.</strong></div>
-        <div><span>Pulsar</span><strong>Turn it into an edit map.</strong></div>
-      </div>
-    </section>
-    <section class="auth-form-side">
-      <div class="auth-panel" id="signedOutAccount">
-        <div class="auth-mobile-brand"><a class="brand" href="index.html"><span class="brand-mark" aria-hidden="true"><i></i><i></i><i></i></span><span class="brand-copy"><strong>Syncora</strong><small>Music planning for editors</small></span></a></div>
-        <p class="eyebrow" id="authEyebrow">Welcome back</p>
-        <h2 id="authTitle">Sign in to Syncora.</h2>
-        <p class="auth-intro" id="authIntro">Your workspace, shortlists, and captured Signals stay connected to your account.</p>
-        <div class="auth-mode-switch" role="tablist" aria-label="Account mode">
-          <button class="auth-mode-button active" type="button" data-auth-mode="login" role="tab" aria-selected="true">Log in</button>
-          <button class="auth-mode-button" type="button" data-auth-mode="signup" role="tab" aria-selected="false">Create account</button>
-        </div>
-        <form id="accountForm" class="account-form auth-account-form">
-          <label class="field">
-            <span>Email</span>
-            <input id="accountEmail" type="email" required autocomplete="email" placeholder="name@example.com">
-          </label>
-          <label class="field">
-            <span>Password</span>
-            <input id="accountPassword" type="password" required minlength="6" autocomplete="current-password" placeholder="Enter your password">
-          </label>
-          <div class="auth-primary-actions">
-            <button class="button primary auth-login-action" type="submit" id="accountLoginButton">Log in</button>
-            <button class="button primary auth-signup-action" type="button" id="accountSignupButton">Create account</button>
-          </div>
-          <p class="auth-message" id="accountAuthMessage" role="status" aria-live="polite"></p>
-        </form>
-        <p class="auth-footnote">Syncora requires an account. Guest access is disabled.</p>
-      </div>
-    </section>
-  </main>
-  <div class="toast hidden" id="toast" role="status" aria-live="polite"></div>
-  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
-<script src="script.js"></script>
+<body class="auth-pending auth-page landing-page" data-page-kind="auth" data-page="auth" data-auth-mode="login">
+	<div class="auth-gate" aria-hidden="true">
+		<span class="gate-orbit"></span>
+		<strong>Syncora</strong>
+	</div>
+
+	<header class="landing-header">
+		<nav class="landing-nav" aria-label="Landing navigation">
+		<a class="brand landing-brand" href="#top" aria-label="Syncora home">
+			<span class="brand-mark" aria-hidden="true"><i></i><i></i><i></i></span>
+			<span class="brand-copy"><strong>Syncora</strong><small>Music planning for editors</small></span>
+		</a>
+
+		<div class="landing-nav-links">
+			<a href="#story">Why Syncora</a>
+			<a href="#tools">Tools</a>
+			<a href="#principle">Approach</a>
+		</div>
+
+		<a class="button ghost small" href="#account" data-auth-jump="login">Sign in</a>
+		</nav>
+	</header>
+
+	<main class="landing-main" id="top">
+		<section class="landing-hero auth-visual">
+		<div class="auth-starfield auth-stars-one" aria-hidden="true"></div>
+		<div class="auth-starfield auth-stars-two" aria-hidden="true"></div>
+		<div class="auth-orb auth-orb-one" aria-hidden="true"></div>
+		<div class="auth-orb auth-orb-two" aria-hidden="true"></div>
+
+		<div class="landing-hero-copy reveal-on-scroll">
+			<p class="eyebrow">Music planning for video editors</p>
+			<h1>Find the signal in the noise.</h1>
+			<p>
+			Syncora helps you move from “what song should I use?” to a clearer,
+			more intentional edit plan — without taking creative control away from you.
+			</p>
+			<div class="landing-hero-actions">
+			<a class="button primary" href="#account" data-auth-jump="signup">Create an account</a>
+			<a class="button ghost" href="#story">See how it works ↓</a>
+			</div>
+		</div>
+
+		<div class="landing-signal-visual reveal-on-scroll" aria-hidden="true">
+			<div class="landing-orbit orbit-one"></div>
+			<div class="landing-orbit orbit-two"></div>
+			<div class="landing-core">
+			<span></span>
+			<strong>Syncora</strong>
+			<small>Brief → Track → Signal</small>
+			</div>
+			<div class="landing-node node-nova"><i></i><span>Nova</span></div>
+			<div class="landing-node node-pulsar"><i></i><span>Pulsar</span></div>
+			<div class="landing-node node-editor"><i></i><span>You</span></div>
+		</div>
+
+		<div class="landing-scroll-cue" aria-hidden="true">
+			<span>Scroll to explore</span>
+			<i></i>
+		</div>
+		</section>
+
+		<section class="landing-story" id="story">
+		<div class="landing-story-sticky reveal-on-scroll">
+			<p class="eyebrow">Before the first cut</p>
+			<h2>The hardest part can happen before the timeline even opens.</h2>
+			<p>
+			Finding music, second-guessing the choice, then scrubbing through a track
+			looking for useful moments can quietly eat a huge chunk of editing time.
+			</p>
+		</div>
+
+		<div class="landing-story-steps">
+			<article class="landing-story-card reveal-on-scroll">
+			<span>01</span>
+			<h3>Describe the direction.</h3>
+			<p>
+				Start with the edit you actually want to make: mood, pace, structure,
+				vocals, and the visual intention the music needs to support.
+			</p>
+			</article>
+
+			<article class="landing-story-card reveal-on-scroll">
+			<span>02</span>
+			<h3>Reduce the search.</h3>
+			<p>
+				Nova narrows a huge musical space to three ranked tracks, with enough
+				context to understand the fit and enough freedom to disagree.
+			</p>
+			</article>
+
+			<article class="landing-story-card reveal-on-scroll">
+			<span>03</span>
+			<h3>Map the useful moments.</h3>
+			<p>
+				Pulsar turns the chosen recording into an editor-facing Signal so you
+				can see where meaningful musical changes may support visual movement.
+			</p>
+			</article>
+		</div>
+		</section>
+
+		<section class="landing-tools" id="tools">
+		<div class="landing-section-heading reveal-on-scroll">
+			<p class="eyebrow">Two focused tools</p>
+			<h2>Discover with Nova. Read the track with Pulsar.</h2>
+		</div>
+
+		<div class="landing-tool-grid">
+			<article class="landing-tool-card landing-tool-nova reveal-on-scroll">
+			<div class="landing-tool-visual nova-tool-visual" aria-hidden="true">
+				<div class="landing-mini-track"><i></i><span></span></div>
+				<div class="landing-mini-track featured"><i></i><span></span></div>
+				<div class="landing-mini-track"><i></i><span></span></div>
+			</div>
+			<div>
+				<p class="eyebrow">Nova</p>
+				<h3>Three choices. Not another endless feed.</h3>
+				<p>
+				Nova turns your creative brief into a focused shortlist, ranks the
+				options, and lets you listen before deciding what actually belongs in your edit.
+				</p>
+			</div>
+			</article>
+
+			<article class="landing-tool-card landing-tool-pulsar reveal-on-scroll">
+			<div class="landing-tool-visual pulsar-tool-visual" aria-hidden="true">
+				<div class="landing-wave">
+				<i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i>
+				</div>
+				<div class="landing-signal-line">
+				<span class="primary" style="left:20%"></span>
+				<span class="secondary" style="left:49%"></span>
+				<span class="tertiary" style="left:76%"></span>
+				</div>
+			</div>
+			<div>
+				<p class="eyebrow">Pulsar</p>
+				<h3>A musical map built for an editor.</h3>
+				<p>
+				Pulsar finds a useful source window, maps measured transition points,
+				and separates them into Primary, Secondary, and Tertiary layers you can explore.
+				</p>
+			</div>
+			</article>
+		</div>
+		</section>
+
+		<section class="landing-principle" id="principle">
+		<div class="landing-principle-orb" aria-hidden="true"></div>
+		<div class="landing-principle-copy reveal-on-scroll">
+			<p class="eyebrow">Guidance, not autopilot</p>
+			<h2>The computer narrows the possibilities. The editor makes the decision.</h2>
+			<p>
+			Syncora is designed to surface context, not replace judgment. Listen to the
+			shortlist. Ignore the first-ranked option if another track feels better.
+			Use a Pulsar cue when it helps, skip it when it does not.
+			</p>
+		</div>
+
+		<div class="landing-principle-flow reveal-on-scroll" aria-hidden="true">
+			<span>Analyze</span><i></i><span>Suggest</span><i></i><strong>Editor decides</strong>
+		</div>
+		</section>
+
+		<section class="landing-account-section" id="account">
+		<div class="landing-account-intro reveal-on-scroll">
+			<p class="eyebrow">Your workspace</p>
+			<h2>Ready when you are.</h2>
+			<p>
+			Sign in to continue your Signals, or create an account to start building
+			a music-planning workspace of your own.
+			</p>
+		</div>
+
+		<div class="auth-form-side landing-auth-form-side reveal-on-scroll">
+			<div class="auth-panel" id="signedOutAccount">
+			<p class="eyebrow" id="authEyebrow">Welcome back</p>
+			<h2 id="authTitle">Sign in to Syncora.</h2>
+			<p class="auth-intro" id="authIntro">
+				Your workspace, shortlists, and captured Signals stay connected to your account.
+			</p>
+
+			<div class="auth-mode-switch" role="tablist" aria-label="Account mode">
+				<button class="auth-mode-button active" type="button" data-auth-mode="login" role="tab" aria-selected="true">Log in</button>
+				<button class="auth-mode-button" type="button" data-auth-mode="signup" role="tab" aria-selected="false">Create account</button>
+			</div>
+
+			<form id="accountForm" class="account-form auth-account-form">
+				<label class="field auth-display-name-field">
+				<span>Display name</span>
+				<input id="accountDisplayName" type="text" maxlength="50" autocomplete="nickname" placeholder="Labib">
+				</label>
+
+				<label class="field">
+				<span>Email</span>
+				<input id="accountEmail" type="email" required autocomplete="email" placeholder="name@example.com">
+				</label>
+
+				<label class="field">
+				<span>Password</span>
+				<input id="accountPassword" type="password" required minlength="6" autocomplete="current-password" placeholder="Enter your password">
+				</label>
+
+				<div class="auth-primary-actions">
+				<button class="button primary auth-login-action" type="submit" id="accountLoginButton">Log in</button>
+				<button class="button primary auth-signup-action" type="button" id="accountSignupButton">Create account</button>
+				</div>
+
+				<p class="auth-message" id="accountAuthMessage" role="status" aria-live="polite"></p>
+			</form>
+
+			<p class="auth-footnote">Syncora requires an account. Guest access is disabled.</p>
+			</div>
+		</div>
+		</section>
+	</main>
+
+	<div class="toast hidden" id="toast" role="status" aria-live="polite"></div>
+
+	<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+	<script src="script.js"></script>
 </body>
 </html>

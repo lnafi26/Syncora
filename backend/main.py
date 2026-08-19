@@ -49,7 +49,7 @@ def get_setting(name, default=None):
 
 BUILD_ID = 'nova-hybrid-0.7.8'
 PULSAR_RESOLVER_BUILD_ID = 'pulsar-youtube-data-resolver-0.3.1'
-PULSAR_ANALYSIS_BUILD_ID = 'pulsar-signal-0.5.1'
+PULSAR_ANALYSIS_BUILD_ID = 'pulsar-signal-0.6.0'
 
 LLM_PROVIDER = (
     get_setting(
@@ -569,7 +569,9 @@ class PulsarResolveRequest(BaseModel):
 
 class PulsarSignalRequest(BaseModel):
     library_track_id: str = Field(min_length=1, max_length=100)
-    density: str = Field(default='balanced', min_length=1, max_length=20)
+    # Kept optional for backward compatibility with older clients.
+    # Pulsar 0.6 no longer uses user-selected cue density.
+    density: str | None = Field(default=None, max_length=20)
     editing_context: str = Field(default='', max_length=2000)
     edit_duration_seconds: int | None = Field(default=None, gt=0, le=86400)
     track_duration_seconds: int | None = Field(default=None, gt=0, le=86400)
@@ -1838,7 +1840,7 @@ def parse_pulsar_json(raw: str):
     return parsed
 
 def create_pulsar_signal_with_qwen(title, analysis, keypoints, editing_context, edit_window=None):
-    objective_payload = {'track_title': title, 'whole_track_analysis': analysis, 'editing_context': editing_context, 'edit_window': edit_window or {}, 'keypoints': [{'timestamp_seconds': keypoint.get('timestamp'), 'change_score': keypoint.get('change_score'), 'component_change': keypoint.get('component_change'), 'signed_change': keypoint.get('signed_change'), 'dominant_transitions': keypoint.get('dominant_transitions')} for keypoint in keypoints]}
+    objective_payload = {'track_title': title, 'whole_track_analysis': analysis, 'editing_context': editing_context, 'edit_window': edit_window or {}, 'keypoints': [{'timestamp_seconds': keypoint.get('timestamp'), 'priority': keypoint.get('tier'), 'change_score': keypoint.get('change_score'), 'component_change': keypoint.get('component_change'), 'signed_change': keypoint.get('signed_change'), 'dominant_transitions': keypoint.get('dominant_transitions')} for keypoint in keypoints]}
     prompt = f"""\nYou are Pulsar, Syncora's music-to-edit interpretation\nassistant for video editors.\n\nYou are NOT analyzing audio yourself.\n\nObjective audio analysis has already been performed by\nCyanite, and deterministic Python code has already chosen\nthe important musical timestamps.\n\nYour ONLY job is to translate those objective moments\ninto useful editing suggestions.\n\n\nCRITICAL RULES:\n\n- Use every supplied keypoint exactly once.\n- Keep the keypoints in the exact supplied order.\n- Do not add timestamps.\n- Do not remove timestamps.\n- Do not move timestamps.\n- timestamp_seconds must exactly match the supplied value.\n- Never invent a beat drop, chorus, verse, bridge,\n  vocal entrance, drum hit, instrument entrance,\n  instrument exit, or other musical event that the\n  objective evidence does not establish.\n- A dominant instrument transition means the classifier\n  changed which instrument was most prominent in the\n  segment. It does NOT prove that the new instrument\n  literally entered at that timestamp.\n- Describe dominant instrument transitions using language\n  such as "becomes more prominent", "takes prominence",\n  "the texture shifts toward", or "becomes dominant".\n- Never say an instrument "enters", "drops out",\n  "starts", "stops", or "intensifies" unless the\n  objective data explicitly establishes that fact.\n- Do not claim millisecond or beat-level precision.\n- Treat each timestamp as an approximate musical\n  transition region identified from Cyanite's\n  segment-level analysis.\n- The Signal may cover only a selected excerpt of the\n  full song. When edit_window.uses_excerpt is true,\n  treat edit_window.start_seconds through\n  edit_window.end_seconds as the recommended source\n  region for the edit. Do not assume the edit begins\n  at 0:00. Cue timestamps remain absolute song times.\n- edit_window is authoritative for the duration and
   source position of the edit.
 - Never require the editor to restate the intended edit
@@ -1881,19 +1883,17 @@ def create_pulsar_signal_with_qwen(title, analysis, keypoints, editing_context, 
         {
             'role': 'system',
             'content': (
-                "You are Nova, Syncora's music-discovery assistant. "
-                "Translate creative briefs into musically coherent "
-                "Last.fm retrieval terms while strictly separating "
-                "visual or aesthetic context from audible musical "
-                "properties. Never infer a niche genre from visual "
-                "context alone. Return concise valid JSON only."
+                "You are Pulsar, Syncora's music-to-edit interpretation assistant. "
+                "Translate supplied objective musical changes into concise, "
+                "practical editing opportunities without inventing musical "
+                "events or changing timestamps. Return valid JSON only."
             )
         },
         {
             'role': 'user',
             'content': prompt
         }
-    ], temperature=0.2, top_p=0.8, max_tokens=1400)
+    ], temperature=0.2, top_p=0.8, max_tokens=3200)
 
 
     except Exception as error:
@@ -2117,7 +2117,7 @@ def create_pulsar_signal_with_qwen(title, analysis, keypoints, editing_context, 
         evidence_text = cue.get('evidence')
         if not isinstance(title_text, str) or not title_text.strip() or (not isinstance(suggestion_text, str)) or (not suggestion_text.strip()) or (not isinstance(evidence_text, str)) or (not evidence_text.strip()):
             raise HTTPException(status_code=502, detail={'error': 'Qwen returned an incomplete Pulsar cue.', 'cue_index': index, 'stage': 'pulsar_qwen_validation', 'retryable': True, 'analysis_preserved': True, 'build': PULSAR_ANALYSIS_BUILD_ID})
-        validated_cues.append({'cue_number': index + 1, 'timestamp_seconds': objective_timestamp, 'title': title_text.strip(), 'suggestion': suggestion_text.strip(), 'evidence': evidence_text.strip(), 'objective': {'change_score': keypoint.get('change_score'), 'component_change': keypoint.get('component_change'), 'signed_change': keypoint.get('signed_change'), 'dominant_transitions': keypoint.get('dominant_transitions')}})
+        validated_cues.append({'cue_number': index + 1, 'timestamp_seconds': objective_timestamp, 'priority': keypoint.get('tier') or classify_pulsar_keypoint_tier(keypoint.get('change_score')), 'title': title_text.strip(), 'suggestion': suggestion_text.strip(), 'evidence': evidence_text.strip(), 'objective': {'tier': keypoint.get('tier') or classify_pulsar_keypoint_tier(keypoint.get('change_score')), 'change_score': keypoint.get('change_score'), 'component_change': keypoint.get('component_change'), 'signed_change': keypoint.get('signed_change'), 'dominant_transitions': keypoint.get('dominant_transitions')}})
     return {'signal_summary': signal_summary.strip(), 'cues': validated_cues}
 
 def create_nova_profile(payload: NovaRequest):
@@ -3820,19 +3820,41 @@ def score_enriched_candidates(active_retrieval_tags, enriched_candidates, semant
 def build_nova_recommendation_reason(
     candidate
 ):
-    matched_tags = (
-        candidate.get(
-            'matched_nova_tags'
-        )
-        or
-        []
-    )
+    """
+    Build a user-facing explanation for a Nova result.
 
-    semantic_similarity = (
-        candidate.get(
-            'semantic_similarity'
+    Internal similarity values and score components remain available
+    in the API response for debugging, but they are deliberately not
+    exposed in the recommendation copy.
+    """
+
+    matched_tags = [
+        str(tag).strip()
+        for tag in (
+            candidate.get(
+                'matched_nova_tags'
+            )
+            or
+            []
         )
-    )
+        if str(tag).strip()
+    ]
+
+    top_tags = [
+        str(tag.get('name')).strip()
+        for tag in (
+            candidate.get(
+                'top_lastfm_tags'
+            )
+            or
+            []
+        )
+        if (
+            isinstance(tag, dict)
+            and
+            tag.get('name')
+        )
+    ]
 
     score_breakdown = (
         candidate.get(
@@ -3851,7 +3873,6 @@ def build_nova_recommendation_reason(
             or
             0.0
         )
-
     except (
         TypeError,
         ValueError,
@@ -3872,51 +3893,57 @@ def build_nova_recommendation_reason(
         )
     )
 
-    if (
-        matched_tags
-        and
-        semantic_similarity
-        is not None
-    ):
-        reason = (
-            "Last.fm's track-specific tags matched "
-            "Nova's retrieval profile on "
-            +
-            ', '.join(
-                matched_tags
-            )
-            +
-            f", with semantic similarity "
-            f"{semantic_similarity:.2f}."
+    if matched_tags:
+        strongest_tags = (
+            matched_tags[:3]
         )
 
-    elif matched_tags:
-        reason = (
-            "Last.fm's track-specific tags matched "
-            "Nova's retrieval profile on "
-            +
-            ', '.join(
-                matched_tags
+        if len(strongest_tags) == 1:
+            musical_direction = (
+                strongest_tags[0]
             )
-            +
-            "."
+        elif len(strongest_tags) == 2:
+            musical_direction = (
+                f'{strongest_tags[0]} and '
+                f'{strongest_tags[1]}'
+            )
+        else:
+            musical_direction = (
+                ', '.join(
+                    strongest_tags[:-1]
+                )
+                +
+                f', and {strongest_tags[-1]}'
+            )
+
+        reason = (
+            'This track sits naturally in the '
+            f'{musical_direction} direction your brief points toward, '
+            'while its overall feel stays close to the atmosphere '
+            'and movement you described.'
         )
 
-    elif (
-        semantic_similarity
-        is not None
-    ):
+    elif top_tags:
+        strongest_tags = (
+            top_tags[:2]
+        )
+
+        musical_direction = (
+            ' and '.join(
+                strongest_tags
+            )
+        )
+
         reason = (
-            "The track's Last.fm music profile "
-            "showed semantic compatibility with "
-            "Nova's desired sound "
-            f"({semantic_similarity:.2f})."
+            'This track surfaced consistently in the same musical '
+            f'neighborhood as your brief, especially around '
+            f'{musical_direction}.'
         )
 
     else:
         reason = (
-            "The track ranked strongly in Nova's "
-            "Last.fm retrieval results."
+            'This track consistently surfaced as one of the closest '
+            'overall fits for the musical direction in your brief.'
         )
 
     if vocal_penalty <= 0:
@@ -3928,11 +3955,8 @@ def build_nova_recommendation_reason(
         'instrumental'
     ):
         adjustment = (
-            "Available Last.fm metadata also "
-            "suggests vocal content that may "
-            "conflict with the requested "
-            "instrumental preference, so Nova "
-            "reduced the score."
+            'Its available metadata suggests more vocal presence than '
+            'you asked for, so Nova ranked it a little more cautiously.'
         )
 
     elif (
@@ -3941,9 +3965,8 @@ def build_nova_recommendation_reason(
         'minimal'
     ):
         adjustment = (
-            "Available Last.fm metadata suggests "
-            "a more vocal-forward track than "
-            "requested, so Nova reduced the score."
+            'Its available metadata suggests a more vocal-forward '
+            'sound than requested, so Nova ranked it more cautiously.'
         )
 
     elif (
@@ -3952,17 +3975,14 @@ def build_nova_recommendation_reason(
         'vocal'
     ):
         adjustment = (
-            "Available Last.fm metadata suggests "
-            "the track may conflict with the "
-            "requested vocal preference, so Nova "
-            "reduced the score."
+            'Its available metadata is less clearly vocal-forward than '
+            'your brief requested, so Nova ranked it more cautiously.'
         )
 
     else:
         adjustment = (
-            "Nova also applied a vocal-preference "
-            "adjustment based on the available "
-            "Last.fm metadata."
+            'Nova also treated the vocal fit a little more cautiously '
+            'for this option.'
         )
 
     return (
@@ -7105,178 +7125,1015 @@ def estimate_track_duration_from_segments(segments, supplied_duration=None):
     return max(timestamps) + estimated_tail
 
 
-def get_pulsar_density_plan(density_key, edit_duration_seconds):
-    profiles = {
-        'minimal': {'seconds_per_cue': 15.0, 'minimum_cues': 2, 'maximum_cues': 8, 'minimum_change_score': 50, 'spacing_factor': 0.7},
-        'balanced': {'seconds_per_cue': 10.0, 'minimum_cues': 3, 'maximum_cues': 12, 'minimum_change_score': 35, 'spacing_factor': 0.6},
-        'detailed': {'seconds_per_cue': 7.0, 'minimum_cues': 4, 'maximum_cues': 16, 'minimum_change_score': 20, 'spacing_factor': 0.5},
-    }
-    profile = profiles[density_key]
-    duration = max(float(edit_duration_seconds or 0), 1.0)
-    target_count = int(round(duration / profile['seconds_per_cue']))
-    target_count = max(profile['minimum_cues'], min(profile['maximum_cues'], target_count))
-    minimum_spacing_seconds = max(3, int(round((duration / (target_count + 1)) * profile['spacing_factor'])))
-    return {
-        'target_count': target_count,
-        'minimum_spacing_seconds': minimum_spacing_seconds,
-        'minimum_change_score': profile['minimum_change_score'],
-        'seconds_per_cue': profile['seconds_per_cue'],
-    }
+def classify_pulsar_keypoint_tier(
+    change_score
+):
+    """
+    Preserve the Signal-strength thresholds the frontend already used,
+    but apply them to every measured transition in the selected window.
+    """
+
+    numeric_score = float(
+        change_score
+        or
+        0.0
+    )
+
+    if numeric_score >= 85:
+        return 'primary'
+
+    if numeric_score >= 60:
+        return 'secondary'
+
+    return 'tertiary'
 
 
-def choose_pulsar_edit_window(candidates, track_duration_seconds, requested_duration_seconds, target_count):
-    track_duration = max(float(track_duration_seconds or 0), 0.0)
-    requested_duration = float(requested_duration_seconds) if isinstance(requested_duration_seconds, (int, float)) and requested_duration_seconds > 0 else track_duration
+def choose_pulsar_edit_window(
+    candidates,
+    track_duration_seconds,
+    requested_duration_seconds,
+):
+    """
+    Pick the source window using the musical change present inside it.
+
+    Pulsar 0.6 intentionally does not optimize toward a fixed cue count.
+    Every measured transition in the chosen window can become a Signal
+    keypoint, then the UI lets the editor reveal Primary, Secondary, and
+    Tertiary layers independently.
+    """
+
+    track_duration = max(
+        float(
+            track_duration_seconds
+            or
+            0
+        ),
+        0.0,
+    )
+
+    requested_duration = (
+        float(
+            requested_duration_seconds
+        )
+        if (
+            isinstance(
+                requested_duration_seconds,
+                (int, float),
+            )
+            and
+            requested_duration_seconds > 0
+        )
+        else
+        track_duration
+    )
+
     if track_duration <= 0:
-        track_duration = max((float(candidate.get('timestamp')) for candidate in candidates if isinstance(candidate.get('timestamp'), (int, float))), default=requested_duration)
+        track_duration = max(
+            (
+                float(
+                    candidate.get(
+                        'timestamp'
+                    )
+                )
+                for candidate in candidates
+                if isinstance(
+                    candidate.get(
+                        'timestamp'
+                    ),
+                    (int, float),
+                )
+            ),
+            default=requested_duration,
+        )
+
     if requested_duration <= 0:
-        requested_duration = track_duration
-    effective_duration = min(requested_duration, track_duration) if track_duration > 0 else requested_duration
+        requested_duration = (
+            track_duration
+        )
+
+    effective_duration = (
+        min(
+            requested_duration,
+            track_duration,
+        )
+        if track_duration > 0
+        else
+        requested_duration
+    )
+
     if effective_duration <= 0:
-        effective_duration = track_duration
-    if not candidates or track_duration <= 0 or effective_duration >= track_duration - 0.5:
+        effective_duration = (
+            track_duration
+        )
+
+    if (
+        not candidates
+        or
+        track_duration <= 0
+        or
+        effective_duration
+        >=
+        track_duration - 0.5
+    ):
         return {
-            'requested_duration_seconds': round(requested_duration, 3) if requested_duration else None,
-            'duration_seconds': round(track_duration, 3),
-            'start_seconds': 0.0,
-            'end_seconds': round(track_duration, 3),
-            'track_duration_seconds': round(track_duration, 3),
-            'uses_excerpt': False,
-            'window_score': None,
+            'requested_duration_seconds':
+                round(
+                    requested_duration,
+                    3,
+                )
+                if requested_duration
+                else None,
+
+            'duration_seconds':
+                round(
+                    track_duration,
+                    3,
+                ),
+
+            'start_seconds':
+                0.0,
+
+            'end_seconds':
+                round(
+                    track_duration,
+                    3,
+                ),
+
+            'track_duration_seconds':
+                round(
+                    track_duration,
+                    3,
+                ),
+
+            'uses_excerpt':
+                False,
+
+            'window_score':
+                None,
+
+            'candidate_count':
+                len(
+                    candidates
+                ),
         }
-    latest_start = max(0.0, track_duration - effective_duration)
-    possible_starts = {0.0, latest_start}
+
+    latest_start = max(
+        0.0,
+        track_duration
+        -
+        effective_duration,
+    )
+
+    possible_starts = {
+        0.0,
+        latest_start,
+    }
+
     for candidate in candidates:
-        timestamp = candidate.get('timestamp')
-        if not isinstance(timestamp, (int, float)):
+        timestamp = candidate.get(
+            'timestamp'
+        )
+
+        if not isinstance(
+            timestamp,
+            (int, float),
+        ):
             continue
-        timestamp = float(timestamp)
-        for start_value in (timestamp, timestamp - effective_duration, timestamp - effective_duration / 2.0):
-            possible_starts.add(min(latest_start, max(0.0, start_value)))
+
+        timestamp = float(
+            timestamp
+        )
+
+        for start_value in (
+            timestamp,
+            timestamp
+            -
+            effective_duration,
+            timestamp
+            -
+            effective_duration / 2.0,
+        ):
+            possible_starts.add(
+                min(
+                    latest_start,
+                    max(
+                        0.0,
+                        start_value,
+                    ),
+                )
+            )
+
     best = None
-    for start_seconds in sorted(possible_starts):
-        end_seconds = min(track_duration, start_seconds + effective_duration)
-        window_candidates = [candidate for candidate in candidates if isinstance(candidate.get('timestamp'), (int, float)) and start_seconds <= float(candidate['timestamp']) <= end_seconds]
-        ranked_scores = sorted((max(0.0, float(candidate.get('raw_change_score') or 0.0)) for candidate in window_candidates), reverse=True)
-        top_scores = ranked_scores[:max(1, target_count)]
-        top_score_sum = sum(top_scores)
-        supporting_score = sum(ranked_scores[max(1, target_count):]) * 0.15
-        if window_candidates:
-            thirds = [False, False, False]
+
+    for start_seconds in sorted(
+        possible_starts
+    ):
+        end_seconds = min(
+            track_duration,
+            start_seconds
+            +
+            effective_duration,
+        )
+
+        window_candidates = [
+            candidate
+            for candidate
+            in candidates
+            if (
+                isinstance(
+                    candidate.get(
+                        'timestamp'
+                    ),
+                    (int, float),
+                )
+                and
+                start_seconds
+                <=
+                float(
+                    candidate[
+                        'timestamp'
+                    ]
+                )
+                <=
+                end_seconds
+            )
+        ]
+
+        raw_scores = [
+            max(
+                0.0,
+                float(
+                    candidate.get(
+                        'raw_change_score'
+                    )
+                    or
+                    0.0
+                ),
+            )
+            for candidate
+            in window_candidates
+        ]
+
+        if raw_scores:
+            salience_sum = sum(
+                raw_scores
+            )
+
+            strongest = max(
+                raw_scores
+            )
+
+            average = (
+                salience_sum
+                /
+                len(
+                    raw_scores
+                )
+            )
+
+            thirds = [
+                False,
+                False,
+                False,
+            ]
+
             for candidate in window_candidates:
-                relative = (float(candidate['timestamp']) - start_seconds) / max(effective_duration, 1.0)
-                third_index = min(2, max(0, int(relative * 3)))
-                thirds[third_index] = True
-            coverage = sum(thirds) / 3.0
+                relative = (
+                    (
+                        float(
+                            candidate[
+                                'timestamp'
+                            ]
+                        )
+                        -
+                        start_seconds
+                    )
+                    /
+                    max(
+                        effective_duration,
+                        1.0,
+                    )
+                )
+
+                third_index = min(
+                    2,
+                    max(
+                        0,
+                        int(
+                            relative
+                            *
+                            3
+                        ),
+                    ),
+                )
+
+                thirds[
+                    third_index
+                ] = True
+
+            coverage = (
+                sum(
+                    thirds
+                )
+                /
+                3.0
+            )
+
+            score = (
+                salience_sum
+                +
+                strongest
+                *
+                0.25
+                +
+                average
+                *
+                0.15
+                +
+                strongest
+                *
+                0.12
+                *
+                coverage
+            )
+
         else:
-            coverage = 0.0
-        strongest = ranked_scores[0] if ranked_scores else 0.0
-        coverage_bonus = strongest * 0.12 * coverage
-        score = top_score_sum + supporting_score + coverage_bonus
-        candidate_result = (score, len(window_candidates), -start_seconds, start_seconds, end_seconds)
-        if best is None or candidate_result > best:
-            best = candidate_result
-    _, candidate_count, _, start_seconds, end_seconds = best
+            score = 0.0
+
+        candidate_result = (
+            score,
+            len(
+                window_candidates
+            ),
+            -start_seconds,
+            start_seconds,
+            end_seconds,
+        )
+
+        if (
+            best is None
+            or
+            candidate_result
+            >
+            best
+        ):
+            best = (
+                candidate_result
+            )
+
+    (
+        _,
+        candidate_count,
+        _,
+        start_seconds,
+        end_seconds,
+    ) = best
+
     return {
-        'requested_duration_seconds': round(requested_duration, 3),
-        'duration_seconds': round(end_seconds - start_seconds, 3),
-        'start_seconds': round(start_seconds, 3),
-        'end_seconds': round(end_seconds, 3),
-        'track_duration_seconds': round(track_duration, 3),
-        'uses_excerpt': True,
-        'window_score': round(best[0], 6),
-        'candidate_count': candidate_count,
+        'requested_duration_seconds':
+            round(
+                requested_duration,
+                3,
+            ),
+
+        'duration_seconds':
+            round(
+                end_seconds
+                -
+                start_seconds,
+                3,
+            ),
+
+        'start_seconds':
+            round(
+                start_seconds,
+                3,
+            ),
+
+        'end_seconds':
+            round(
+                end_seconds,
+                3,
+            ),
+
+        'track_duration_seconds':
+            round(
+                track_duration,
+                3,
+            ),
+
+        'uses_excerpt':
+            True,
+
+        'window_score':
+            round(
+                best[0],
+                6,
+            ),
+
+        'candidate_count':
+            candidate_count,
     }
 
 
-@app.get('/pulsar/analyze/keypoints/{library_track_id}')
-async def pulsar_analyze_keypoints(library_track_id: str, density: str='balanced', edit_duration_seconds: int | None=None, track_duration_seconds: int | None=None):
-    density_key = density.strip().casefold()
-    if density_key not in ['minimal', 'balanced', 'detailed']:
-        raise HTTPException(status_code=422, detail={'error': 'Invalid Pulsar cue density.', 'allowed_values': ['minimal', 'balanced', 'detailed'], 'build': PULSAR_ANALYSIS_BUILD_ID})
-    segment_response = await pulsar_analyze_segments(library_track_id)
-    segments = segment_response.get('segments', [])
-    if not isinstance(segments, list) or len(segments) < 2:
-        raise HTTPException(status_code=502, detail={'error': 'Pulsar needs at least two Cyanite segments to calculate key moments.', 'stage': 'pulsar_keypoint_scoring', 'build': PULSAR_ANALYSIS_BUILD_ID})
+@app.get(
+    '/pulsar/analyze/keypoints/{library_track_id}'
+)
+async def pulsar_analyze_keypoints(
+    library_track_id: str,
+    density: str | None = None,
+    edit_duration_seconds: int | None = None,
+    track_duration_seconds: int | None = None,
+):
+    """
+    Map every measured transition inside Pulsar's selected source window.
+
+    The legacy density query parameter is accepted but ignored so older
+    clients do not break during the staging transition.
+    """
+
+    segment_response = (
+        await pulsar_analyze_segments(
+            library_track_id
+        )
+    )
+
+    segments = (
+        segment_response.get(
+            'segments',
+            [],
+        )
+    )
+
+    if (
+        not isinstance(
+            segments,
+            list,
+        )
+        or
+        len(
+            segments
+        )
+        <
+        2
+    ):
+        raise HTTPException(
+            status_code=502,
+            detail={
+                'error':
+                    (
+                        'Pulsar needs at least two '
+                        'audio-analysis segments to '
+                        'calculate key moments.'
+                    ),
+
+                'stage':
+                    'pulsar_keypoint_scoring',
+
+                'build':
+                    PULSAR_ANALYSIS_BUILD_ID,
+            }
+        )
+
     candidates = []
     score_weights = None
     transition_bonus_weights = None
-    for index in range(1, len(segments)):
-        previous_segment = segments[index - 1]
-        current_segment = segments[index]
-        change_data = calculate_pulsar_segment_change(previous_segment, current_segment)
-        score_weights = change_data['weights']
-        transition_bonus_weights = change_data['transition_bonus_weights']
-        candidates.append({'segment_index': current_segment.get('index'), 'from_timestamp': previous_segment.get('timestamp'), 'timestamp': current_segment.get('timestamp'), 'raw_change_score': change_data['raw_change_score'], 'base_change_score': change_data['base_change_score'], 'transition_bonus': change_data['transition_bonus'], 'component_change': change_data['component_change'], 'signed_change': change_data['signed_change'], 'dominant_transitions': change_data['dominant_transitions']})
-    track_duration = estimate_track_duration_from_segments(segments, track_duration_seconds)
-    requested_duration = edit_duration_seconds if edit_duration_seconds else track_duration
-    effective_duration = min(float(requested_duration or track_duration), track_duration) if track_duration > 0 else float(requested_duration or 0)
-    density_plan = get_pulsar_density_plan(density_key, effective_duration)
-    edit_window = choose_pulsar_edit_window(candidates, track_duration, requested_duration, density_plan['target_count'])
-    window_start = edit_window['start_seconds']
-    window_end = edit_window['end_seconds']
-    window_candidates = [candidate for candidate in candidates if isinstance(candidate.get('timestamp'), (int, float)) and window_start <= float(candidate['timestamp']) <= window_end]
-    maximum_raw_score = max((candidate['raw_change_score'] for candidate in window_candidates), default=0.0)
+
+    for index in range(
+        1,
+        len(
+            segments
+        ),
+    ):
+        previous_segment = (
+            segments[
+                index - 1
+            ]
+        )
+
+        current_segment = (
+            segments[
+                index
+            ]
+        )
+
+        change_data = (
+            calculate_pulsar_segment_change(
+                previous_segment,
+                current_segment,
+            )
+        )
+
+        score_weights = (
+            change_data[
+                'weights'
+            ]
+        )
+
+        transition_bonus_weights = (
+            change_data[
+                'transition_bonus_weights'
+            ]
+        )
+
+        candidates.append(
+            {
+                'segment_index':
+                    current_segment.get(
+                        'index'
+                    ),
+
+                'from_timestamp':
+                    previous_segment.get(
+                        'timestamp'
+                    ),
+
+                'timestamp':
+                    current_segment.get(
+                        'timestamp'
+                    ),
+
+                'raw_change_score':
+                    change_data[
+                        'raw_change_score'
+                    ],
+
+                'base_change_score':
+                    change_data[
+                        'base_change_score'
+                    ],
+
+                'transition_bonus':
+                    change_data[
+                        'transition_bonus'
+                    ],
+
+                'component_change':
+                    change_data[
+                        'component_change'
+                    ],
+
+                'signed_change':
+                    change_data[
+                        'signed_change'
+                    ],
+
+                'dominant_transitions':
+                    change_data[
+                        'dominant_transitions'
+                    ],
+            }
+        )
+
+    track_duration = (
+        estimate_track_duration_from_segments(
+            segments,
+            track_duration_seconds,
+        )
+    )
+
+    requested_duration = (
+        edit_duration_seconds
+        if edit_duration_seconds
+        else
+        track_duration
+    )
+
+    edit_window = (
+        choose_pulsar_edit_window(
+            candidates,
+            track_duration,
+            requested_duration,
+        )
+    )
+
+    window_start = (
+        edit_window[
+            'start_seconds'
+        ]
+    )
+
+    window_end = (
+        edit_window[
+            'end_seconds'
+        ]
+    )
+
+    window_candidates = [
+        candidate
+        for candidate
+        in candidates
+        if (
+            isinstance(
+                candidate.get(
+                    'timestamp'
+                ),
+                (int, float),
+            )
+            and
+            window_start
+            <=
+            float(
+                candidate[
+                    'timestamp'
+                ]
+            )
+            <=
+            window_end
+        )
+    ]
+
+    maximum_raw_score = max(
+        (
+            float(
+                candidate.get(
+                    'raw_change_score'
+                )
+                or
+                0.0
+            )
+            for candidate
+            in window_candidates
+        ),
+        default=0.0,
+    )
+
+    keypoints = []
+
     for candidate in window_candidates:
-        relative_score = candidate['raw_change_score'] / maximum_raw_score * 100.0 if maximum_raw_score > 0 else 0.0
-        candidate['change_score'] = int(round(relative_score))
-        candidate['raw_change_score'] = round(candidate['raw_change_score'], 6)
-        candidate['base_change_score'] = round(candidate['base_change_score'], 6)
-        candidate['transition_bonus'] = round(candidate['transition_bonus'], 6)
-    ranked_candidates = sorted(window_candidates, key=lambda item: (item['change_score'], len(item['dominant_transitions']), item['raw_change_score']), reverse=True)
-    target_count = density_plan['target_count']
-    minimum_spacing_seconds = density_plan['minimum_spacing_seconds']
-    minimum_change_score = density_plan['minimum_change_score']
-    selected = []
-    for candidate in ranked_candidates:
-        if candidate['change_score'] < minimum_change_score:
-            continue
-        timestamp = candidate.get('timestamp')
-        if not isinstance(timestamp, (int, float)):
-            continue
-        spaced_enough = all(abs(timestamp - selected_candidate['timestamp']) >= minimum_spacing_seconds for selected_candidate in selected)
-        if not spaced_enough:
-            continue
-        selected.append(candidate)
-        if len(selected) >= target_count:
-            break
-    if len(selected) < min(target_count, len(ranked_candidates)):
-        for candidate in ranked_candidates:
-            if candidate in selected:
-                continue
-            timestamp = candidate.get('timestamp')
-            if not isinstance(timestamp, (int, float)):
-                continue
-            relaxed_spacing = max(2, minimum_spacing_seconds // 2)
-            spaced_enough = all(abs(timestamp - selected_candidate['timestamp']) >= relaxed_spacing for selected_candidate in selected)
-            if not spaced_enough:
-                continue
-            selected.append(candidate)
-            if len(selected) >= target_count:
-                break
-    selected.sort(key=lambda item: item['timestamp'])
-    rejected_for_low_salience = [{'timestamp': candidate['timestamp'], 'change_score': candidate['change_score']} for candidate in ranked_candidates if candidate['change_score'] < minimum_change_score]
-    return {'build': PULSAR_ANALYSIS_BUILD_ID, 'library_track_id': library_track_id, 'title': segment_response.get('title'), 'analysis': segment_response.get('analysis'), 'density': density_key, 'edit_window': edit_window, 'selection': {'target_count': target_count, 'minimum_spacing_seconds': minimum_spacing_seconds, 'minimum_change_score': minimum_change_score, 'seconds_per_cue': density_plan['seconds_per_cue'], 'selected_count': len(selected), 'target_reached': len(selected) >= target_count}, 'scoring': {'type': 'within-selected-window relative segment-change score', 'range': '0-100', 'weights': score_weights, 'transition_bonus_weights': transition_bonus_weights}, 'keypoints': selected, 'candidate_count': len(candidates), 'window_candidate_count': len(window_candidates), 'rejected_for_low_salience': rejected_for_low_salience}
+        raw_change_score = float(
+            candidate.get(
+                'raw_change_score'
+            )
+            or
+            0.0
+        )
+
+        relative_score = (
+            raw_change_score
+            /
+            maximum_raw_score
+            *
+            100.0
+            if maximum_raw_score > 0
+            else
+            0.0
+        )
+
+        candidate[
+            'change_score'
+        ] = int(
+            round(
+                relative_score
+            )
+        )
+
+        candidate[
+            'tier'
+        ] = (
+            classify_pulsar_keypoint_tier(
+                candidate[
+                    'change_score'
+                ]
+            )
+        )
+
+        candidate[
+            'raw_change_score'
+        ] = round(
+            raw_change_score,
+            6,
+        )
+
+        candidate[
+            'base_change_score'
+        ] = round(
+            candidate[
+                'base_change_score'
+            ],
+            6,
+        )
+
+        candidate[
+            'transition_bonus'
+        ] = round(
+            candidate[
+                'transition_bonus'
+            ],
+            6,
+        )
+
+        # Exact zero-change boundaries are not meaningful keypoints.
+        # Every non-zero measured transition is retained.
+        if raw_change_score > 0:
+            keypoints.append(
+                candidate
+            )
+
+    keypoints.sort(
+        key=lambda item:
+            item[
+                'timestamp'
+            ]
+    )
+
+    tier_counts = {
+        'primary':
+            0,
+
+        'secondary':
+            0,
+
+        'tertiary':
+            0,
+    }
+
+    for keypoint in keypoints:
+        tier = keypoint.get(
+            'tier'
+        )
+
+        if tier in tier_counts:
+            tier_counts[
+                tier
+            ] += 1
+
+    return {
+        'build':
+            PULSAR_ANALYSIS_BUILD_ID,
+
+        'library_track_id':
+            library_track_id,
+
+        'title':
+            segment_response.get(
+                'title'
+            ),
+
+        'analysis':
+            segment_response.get(
+                'analysis'
+            ),
+
+        'mode':
+            'all-ranked-transitions',
+
+        'legacy_density_ignored':
+            density,
+
+        'edit_window':
+            edit_window,
+
+        'selection': {
+            'selected_count':
+                len(
+                    keypoints
+                ),
+
+            'window_candidate_count':
+                len(
+                    window_candidates
+                ),
+
+            'primary_count':
+                tier_counts[
+                    'primary'
+                ],
+
+            'secondary_count':
+                tier_counts[
+                    'secondary'
+                ],
+
+            'tertiary_count':
+                tier_counts[
+                    'tertiary'
+                ],
+
+            'fixed_target_count':
+                False,
+
+            'fixed_spacing':
+                False,
+        },
+
+        'scoring': {
+            'type':
+                (
+                    'within-selected-window relative '
+                    'segment-change score'
+                ),
+
+            'range':
+                '0-100',
+
+            'tier_thresholds': {
+                'primary':
+                    '>=85',
+
+                'secondary':
+                    '60-84',
+
+                'tertiary':
+                    '<60',
+            },
+
+            'weights':
+                score_weights,
+
+            'transition_bonus_weights':
+                transition_bonus_weights,
+        },
+
+        'keypoints':
+            keypoints,
+
+        'candidate_count':
+            len(
+                candidates
+            ),
+
+        'window_candidate_count':
+            len(
+                window_candidates
+            ),
+    }
 
 
-@app.post('/pulsar/signal/generate')
-async def pulsar_signal_generate(payload: PulsarSignalRequest):
-    start_time = time.perf_counter()
-    density_key = payload.density.strip().casefold()
-    if density_key not in ['minimal', 'balanced', 'detailed']:
-        raise HTTPException(status_code=422, detail={'error': 'Invalid Pulsar cue density.', 'allowed_values': ['minimal', 'balanced', 'detailed'], 'build': PULSAR_ANALYSIS_BUILD_ID})
-    keypoint_response = await pulsar_analyze_keypoints(library_track_id=payload.library_track_id, density=density_key, edit_duration_seconds=payload.edit_duration_seconds, track_duration_seconds=payload.track_duration_seconds)
-    keypoints = keypoint_response.get('keypoints') or []
+@app.post(
+    '/pulsar/signal/generate'
+)
+async def pulsar_signal_generate(
+    payload: PulsarSignalRequest
+):
+    start_time = (
+        time.perf_counter()
+    )
+
+    keypoint_response = (
+        await pulsar_analyze_keypoints(
+            library_track_id=
+                payload.library_track_id,
+
+            density=
+                payload.density,
+
+            edit_duration_seconds=
+                payload.edit_duration_seconds,
+
+            track_duration_seconds=
+                payload.track_duration_seconds,
+        )
+    )
+
+    keypoints = (
+        keypoint_response.get(
+            'keypoints'
+        )
+        or
+        []
+    )
+
     if not keypoints:
-        raise HTTPException(status_code=502, detail={'error': 'Pulsar did not find any usable key moments in the selected edit window.', 'stage': 'pulsar_signal_generation', 'build': PULSAR_ANALYSIS_BUILD_ID})
-    title = keypoint_response.get('title')
-    analysis = keypoint_response.get('analysis') or {}
-    edit_window = keypoint_response.get('edit_window') or {}
-    qwen_start = time.perf_counter()
-    qwen_signal = await asyncio.to_thread(create_pulsar_signal_with_qwen, title, analysis, keypoints, payload.editing_context, edit_window)
-    qwen_ms = round((time.perf_counter() - qwen_start) * 1000)
-    total_ms = round((time.perf_counter() - start_time) * 1000)
-    return {'build': PULSAR_ANALYSIS_BUILD_ID, 'generated': True, 'library_track_id': payload.library_track_id, 'title': title, 'density': density_key, 'editing_context': payload.editing_context, 'analysis': analysis, 'edit_window': edit_window, 'selection': keypoint_response.get('selection'), 'signal': {'summary': qwen_signal['signal_summary'], 'cue_count': len(qwen_signal['cues']), 'cues': qwen_signal['cues']}, 'timing_ms': {'qwen_interpretation': qwen_ms, 'total': total_ms}}
+        raise HTTPException(
+            status_code=502,
+            detail={
+                'error':
+                    (
+                        'Pulsar did not find any usable '
+                        'musical changes in the selected '
+                        'edit window.'
+                    ),
+
+                'message':
+                    (
+                        'Try the track again or use a '
+                        'different edit duration.'
+                    ),
+
+                'stage':
+                    'pulsar_signal_generation',
+
+                'build':
+                    PULSAR_ANALYSIS_BUILD_ID,
+            }
+        )
+
+    title = (
+        keypoint_response.get(
+            'title'
+        )
+    )
+
+    analysis = (
+        keypoint_response.get(
+            'analysis'
+        )
+        or
+        {}
+    )
+
+    edit_window = (
+        keypoint_response.get(
+            'edit_window'
+        )
+        or
+        {}
+    )
+
+    qwen_start = (
+        time.perf_counter()
+    )
+
+    qwen_signal = (
+        await asyncio.to_thread(
+            create_pulsar_signal_with_qwen,
+            title,
+            analysis,
+            keypoints,
+            payload.editing_context,
+            edit_window,
+        )
+    )
+
+    qwen_ms = round(
+        (
+            time.perf_counter()
+            -
+            qwen_start
+        )
+        *
+        1000
+    )
+
+    total_ms = round(
+        (
+            time.perf_counter()
+            -
+            start_time
+        )
+        *
+        1000
+    )
+
+    return {
+        'build':
+            PULSAR_ANALYSIS_BUILD_ID,
+
+        'generated':
+            True,
+
+        'library_track_id':
+            payload.library_track_id,
+
+        'title':
+            title,
+
+        'keypoint_mode':
+            'all-ranked-transitions',
+
+        'editing_context':
+            payload.editing_context,
+
+        'analysis':
+            analysis,
+
+        'edit_window':
+            edit_window,
+
+        'selection':
+            keypoint_response.get(
+                'selection'
+            ),
+
+        'signal': {
+            'summary':
+                qwen_signal[
+                    'signal_summary'
+                ],
+
+            'cue_count':
+                len(
+                    qwen_signal[
+                        'cues'
+                    ]
+                ),
+
+            'cues':
+                qwen_signal[
+                    'cues'
+                ],
+        },
+
+        'timing_ms': {
+            'qwen_interpretation':
+                qwen_ms,
+
+            'total':
+                total_ms,
+        },
+    }
+
 
 @app.get('/')
 def root():

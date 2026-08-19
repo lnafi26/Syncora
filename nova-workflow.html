@@ -149,7 +149,7 @@
 <div>
 <p class="eyebrow">Your shortlist</p>
 <h2>Three tracks with the strongest fit</h2>
-<p>Compare the options, understand why they fit, and commit when one feels right.</p>
+<p>Listen to each option, understand why it fits, and choose the track that feels right for your edit.</p>
 </div>
 <button class="button ghost small" id="rerunTrackfit" type="button">Adjust brief</button>
 </div>
@@ -201,6 +201,15 @@
         <p class="eyebrow">Account</p>
         <h2 id="signedInName">Signed in</h2>
         <p id="signedInEmail"></p>
+        <div class="account-profile-editor">
+            <label class="field">
+                <span>Display name</span>
+                <input id="profileDisplayName" type="text" maxlength="50" autocomplete="nickname" placeholder="How Syncora should greet you">
+            </label>
+            <button class="button ghost small" id="saveDisplayNameButton" type="button">Save display name</button>
+            <p class="profile-message" id="displayNameMessage" role="status" aria-live="polite"></p>
+        </div>
+
         <div class="account-summary">
             <div><strong id="accountBlueprintCount">0</strong><span>Captured Signals</span></div>
             <div><strong>Supabase</strong><span>Authentication</span></div>
