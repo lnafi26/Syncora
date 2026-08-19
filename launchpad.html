@@ -21,8 +21,21 @@
 		</button>
 	</nav>
 </header>
+<div class="launch-cosmos" aria-hidden="true">
+    <span class="launch-cosmos-orb launch-cosmos-orb-one"></span>
+    <span class="launch-cosmos-orb launch-cosmos-orb-two"></span>
+    <span class="launch-cosmos-orb launch-cosmos-orb-three"></span>
+    <i class="launch-cosmos-star star-one"></i>
+    <i class="launch-cosmos-star star-two"></i>
+    <i class="launch-cosmos-star star-three"></i>
+</div>
   	<main class="page-shell">
-<div class="hero-card">
+<section class="launch-welcome reveal-on-scroll" aria-label="Personal welcome">
+    <p class="eyebrow">Launchpad</p>
+    <h1>Hello, <span id="launchDisplayName">Editor</span>.</h1>
+    <p>Pick up where your creative process needs a little more signal.</p>
+</section>
+<div class="hero-card reveal-on-scroll">
 <div class="hero-copy">
 <span class="pill">Music planning for video editors</span>
 <h2>Move from indecision to a usable edit plan.</h2>
@@ -61,12 +74,12 @@
 <div class="playhead"></div>
 </div>
 </div>
-<div class="stats-grid">
+<div class="stats-grid reveal-on-scroll">
 <article><span>Signals captured</span> <strong id="blueprintCount">0</strong> <small>Saved to your account</small></article>
 <article><span>Nova shortlist</span> <strong>3 tracks</strong> <small>Focused choices, not an endless feed</small></article>
 <article><span>Core workflow</span> <strong>Nova → Pulsar</strong> <small>Choose first. Map second.</small></article>
 </div>
-<section aria-labelledby="launchStoryTitle" class="launch-story">
+<section aria-labelledby="launchStoryTitle" class="launch-story reveal-on-scroll">
 <div class="launch-story-heading">
 <p class="eyebrow">Before the first cut</p>
 <h2 id="launchStoryTitle">The soundtrack shapes the edit before the timeline does.</h2>
@@ -76,7 +89,7 @@
 <p>It does not edit for you. It helps narrow the possibilities, surface useful musical structure, and give you a clearer starting point while your creative judgment stays in control.</p>
 </div>
 </section>
-<section aria-labelledby="crownTitle" class="crown-section">
+<section aria-labelledby="crownTitle" class="crown-section reveal-on-scroll">
 <div class="section-heading crown-heading">
 <div>
 <p class="eyebrow">The core of Syncora</p>
@@ -116,7 +129,7 @@
 </a>
 </div>
 </section>
-<div class="section-heading compact">
+<div class="section-heading compact reveal-on-scroll">
 <div>
 <p class="eyebrow">Continue working</p>
 <h2>Recent Echoes</h2>
@@ -133,6 +146,15 @@
 		<p class="eyebrow">Account</p>
 		<h2 id="signedInName">Signed in</h2>
 		<p id="signedInEmail"></p>
+        <div class="account-profile-editor">
+            <label class="field">
+                <span>Display name</span>
+                <input id="profileDisplayName" type="text" maxlength="50" autocomplete="nickname" placeholder="How Syncora should greet you">
+            </label>
+            <button class="button ghost small" id="saveDisplayNameButton" type="button">Save display name</button>
+            <p class="profile-message" id="displayNameMessage" role="status" aria-live="polite"></p>
+        </div>
+
 		<div class="account-summary">
 			<div><strong id="accountBlueprintCount">0</strong><span>Captured Signals</span></div>
 			<div><strong>Supabase</strong><span>Authentication</span></div>

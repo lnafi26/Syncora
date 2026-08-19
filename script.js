@@ -22,11 +22,15 @@ function routeTo(relativePath, { replace = false } = {}) {
 // SUPABASE AUTHENTICATION
 // =====================================================
 
+const authDisplayNameInput = document.getElementById('accountDisplayName');
 const authEmailInput = document.getElementById('accountEmail');
 const authPasswordInput = document.getElementById('accountPassword');
 const authForm = document.getElementById('accountForm');
 const authSignupButton = document.getElementById('accountSignupButton');
 const authMessage = document.getElementById('accountAuthMessage');
+const profileDisplayNameInput = document.getElementById('profileDisplayName');
+const saveDisplayNameButton = document.getElementById('saveDisplayNameButton');
+const displayNameMessage = document.getElementById('displayNameMessage');
 
 function setAuthMessage(message = '', type = '') {
     if (!authMessage) return;
@@ -91,14 +95,30 @@ function updateAuthUI(session) {
     if (navAccountName) navAccountName.textContent = displayName;
     if (navAccountEmail) navAccountEmail.textContent = user.email || 'Signed in';
     if (navAccountAvatar) navAccountAvatar.textContent = displayName.charAt(0).toUpperCase();
+    if (profileDisplayNameInput) profileDisplayNameInput.value = displayName;
+
+    const launchDisplayName = document.getElementById('launchDisplayName');
+    if (launchDisplayName) launchDisplayName.textContent = displayName;
+
+    if (displayNameMessage) {
+        displayNameMessage.textContent = '';
+        displayNameMessage.classList.remove('error', 'success');
+    }
 
     setAuthMessage();
     revealAuthenticatedPage();
 }
 
 async function signUp() {
+    const displayName = authDisplayNameInput?.value.trim() || '';
     const email = authEmailInput?.value.trim();
     const password = authPasswordInput?.value || '';
+
+    if (!displayName) {
+        setAuthMessage('Choose a display name for your Syncora workspace.', 'error');
+        authDisplayNameInput?.focus();
+        return;
+    }
 
     if (!email || !password) {
         setAuthMessage('Please enter an email and password.', 'error');
@@ -118,7 +138,10 @@ async function signUp() {
             email,
             password,
             options: {
-                emailRedirectTo: AUTH_REDIRECT_URL
+                emailRedirectTo: AUTH_REDIRECT_URL,
+                data: {
+                    display_name: displayName
+                }
             }
         });
 
@@ -217,9 +240,76 @@ async function logOut() {
     }
 }
 
+async function saveDisplayName() {
+    if (!profileDisplayNameInput) {
+        return;
+    }
+
+    const displayName = profileDisplayNameInput.value.trim();
+
+    if (!displayName) {
+        if (displayNameMessage) {
+            displayNameMessage.textContent = 'Display name cannot be empty.';
+            displayNameMessage.classList.remove('success');
+            displayNameMessage.classList.add('error');
+        }
+        profileDisplayNameInput.focus();
+        return;
+    }
+
+    saveDisplayNameButton?.setAttribute('disabled', '');
+
+    if (displayNameMessage) {
+        displayNameMessage.textContent = 'Saving…';
+        displayNameMessage.classList.remove('error', 'success');
+    }
+
+    try {
+        const { data, error } = await db.auth.updateUser({
+            data: {
+                display_name: displayName
+            }
+        });
+
+        if (error) {
+            console.error('Display-name update error:', error);
+
+            if (displayNameMessage) {
+                displayNameMessage.textContent = error.message || 'Could not update your display name.';
+                displayNameMessage.classList.remove('success');
+                displayNameMessage.classList.add('error');
+            }
+            return;
+        }
+
+        if (data?.user) {
+            updateAuthUI({ user: data.user });
+        }
+
+        if (displayNameMessage) {
+            displayNameMessage.textContent = 'Display name saved.';
+            displayNameMessage.classList.remove('error');
+            displayNameMessage.classList.add('success');
+        }
+
+        showToast(`Hello, ${displayName}.`);
+    } catch (error) {
+        console.error('Unexpected display-name update error:', error);
+
+        if (displayNameMessage) {
+            displayNameMessage.textContent = 'Could not reach the account service.';
+            displayNameMessage.classList.remove('success');
+            displayNameMessage.classList.add('error');
+        }
+    } finally {
+        saveDisplayNameButton?.removeAttribute('disabled');
+    }
+}
+
 authForm?.addEventListener('submit', logIn);
 authSignupButton?.addEventListener('click', signUp);
 document.getElementById('signOutButton')?.addEventListener('click', logOut);
+saveDisplayNameButton?.addEventListener('click', saveDisplayName);
 
 async function initializeAuth() {
     try {
@@ -259,6 +349,10 @@ const $$ = selector => [...document.querySelectorAll(selector)];
 let selectedTrack = null;
 let currentBlueprint = null;
 let currentNovaSessionId = null;
+let currentNovaPreviewIndex = null;
+const novaPreviewCache = new Map();
+let currentPulsarEditDurationSeconds = 30;
+const activeSignalLayers = new Set(["primary"]);
 
 // =====================================================
 // PAGE INFORMATION
@@ -295,6 +389,7 @@ const NOVA_REQUEST_TIMEOUT_MS = 120000;
 
 let currentNovaProfile = null;
 let novaRequestController = null;
+let novaLoadingMessageTimer = null;
 
 // =====================================================
 // PULSAR API CONFIGURATION
@@ -588,7 +683,7 @@ function getPulsarErrorPresentation(error) {
             detail:
                 error?.message
                 ||
-                "Try a different duration or suggestion density.",
+                "Try the track again or use a different edit duration.",
 
             toast:
                 "No usable Signal was generated."
@@ -1601,81 +1696,99 @@ function normalizeNovaRecommendations(data) {
 }
 
 function setNovaLoading(isLoading) {
-    const submitButton =
-        $("#novaSubmitButton");
+    const submitButton = $("#novaSubmitButton");
 
     if (!submitButton) {
         return;
     }
 
     if (isLoading) {
-        submitButton.disabled =
-            true;
-
-        submitButton.dataset
-            .defaultLabel =
-            submitButton.textContent;
-
-        submitButton.textContent =
-            "Nova is building your shortlist…";
-    } else {
-        submitButton.disabled =
-            false;
-
-        submitButton.textContent =
-            submitButton.dataset
-                .defaultLabel
-            ||
-            "Generate shortlist →";
+        submitButton.disabled = true;
+        submitButton.dataset.defaultLabel = submitButton.textContent;
+        submitButton.textContent = "Nova is building your shortlist…";
+        return;
     }
+
+    if (novaLoadingMessageTimer) {
+        window.clearInterval(novaLoadingMessageTimer);
+        novaLoadingMessageTimer = null;
+    }
+
+    submitButton.disabled = false;
+    submitButton.textContent =
+        submitButton.dataset.defaultLabel
+        ||
+        "Generate shortlist →";
 }
 
 function renderNovaLoading() {
-    $("#songResults").innerHTML =
-        Array.from(
-            {
-                length: 3
-            },
-            (
-                _,
-                index
-            ) => `
-                <article
-                    class="song-card nova-loading-card"
-                    aria-hidden="true"
-                >
-                    <div class="song-art nova-loading-art">
-                        <span class="match-badge">
-                            Option ${index + 1}
-                        </span>
-                    </div>
+    const messages = [
+        "Reading the musical shape of your brief…",
+        "Searching the catalog for a coherent neighborhood…",
+        "Comparing the strongest candidates…",
+        "Narrowing the decision to three tracks…"
+    ];
 
-                    <div class="song-body">
-                        <div class="nova-loading-line wide"></div>
-                        <div class="nova-loading-line medium"></div>
+    $("#songResults").innerHTML = `
+        <div class="nova-fluid-loader" role="status" aria-live="polite">
+            <div class="nova-loader-visual" aria-hidden="true">
+                <span class="nova-loader-core"></span>
+                <span class="nova-loader-ring ring-one"></span>
+                <span class="nova-loader-ring ring-two"></span>
+                <span class="nova-loader-particle particle-one"></span>
+                <span class="nova-loader-particle particle-two"></span>
+                <span class="nova-loader-particle particle-three"></span>
+            </div>
 
-                        <div class="song-details">
-                            <div class="nova-loading-block"></div>
-                            <div class="nova-loading-block"></div>
-                            <div class="nova-loading-block"></div>
-                        </div>
+            <div class="nova-loader-copy">
+                <p class="eyebrow">Nova is listening to the brief</p>
+                <h3>Finding three tracks worth your attention.</h3>
+                <p id="novaLoadingMessage">${messages[0]}</p>
+            </div>
 
-                        <div class="nova-loading-line wide"></div>
-                        <div class="nova-loading-line medium"></div>
-                    </div>
-                </article>
-            `
-        )
-        .join("");
+            <div class="nova-loader-flow" aria-hidden="true">
+                <span>Brief</span>
+                <i></i>
+                <span>Search</span>
+                <i></i>
+                <span>Compare</span>
+                <i></i>
+                <strong>Shortlist</strong>
+            </div>
+        </div>
+    `;
 
-    $("#novaResults")
-        .classList
-        .remove("hidden");
+    $("#novaResults")?.classList.remove("hidden");
 
-    $("#novaResults")
-        .scrollIntoView({
-            behavior: "smooth"
-        });
+    $("#novaResults")?.scrollIntoView({
+        behavior: "smooth",
+        block: "start"
+    });
+
+    if (novaLoadingMessageTimer) {
+        window.clearInterval(novaLoadingMessageTimer);
+    }
+
+    let messageIndex = 0;
+
+    novaLoadingMessageTimer = window.setInterval(() => {
+        const target = $("#novaLoadingMessage");
+
+        if (!target) {
+            window.clearInterval(novaLoadingMessageTimer);
+            novaLoadingMessageTimer = null;
+            return;
+        }
+
+        messageIndex = (messageIndex + 1) % messages.length;
+        target.classList.add("changing");
+
+        window.setTimeout(() => {
+            if (!target.isConnected) return;
+            target.textContent = messages[messageIndex];
+            target.classList.remove("changing");
+        }, 160);
+    }, 1800);
 }
 
 function renderNovaError(message) {
@@ -1736,6 +1849,8 @@ $("#novaForm")
 
             currentNovaProfile =
                 null;
+
+            stopNovaPreview();
 
             const payload =
                 buildNovaRequestPayload();
@@ -1851,145 +1966,225 @@ $("#rerunTrackfit")
         }
     );
 
+function novaRankLabel(index) {
+    if (index === 0) return "Best fit";
+    if (index === 1) return "Second fit";
+    return "Third fit";
+}
+
+function novaOptionLabel(index) {
+    return `Option ${String(index + 1).padStart(2, "0")}`;
+}
+
+function humanizeNovaTraits(song) {
+    const source = [
+        ...(song.matchedTags || []),
+        ...(song.topTags || [])
+    ];
+
+    return [...new Set(
+        source
+            .map(tag => String(tag || "").trim())
+            .filter(Boolean)
+    )].slice(0, 4);
+}
+
+function buildNovaFitCopy(song) {
+    const reason = String(song.reason || "").trim();
+
+    if (
+        reason
+        &&
+        !/semantic similarity|semantic compatibility|nova score|score breakdown|last\.fm/i.test(reason)
+    ) {
+        return reason;
+    }
+
+    const traits = humanizeNovaTraits(song);
+
+    if (traits.length >= 2) {
+        return `This track stays close to the ${traits[0]} and ${traits[1]} direction in your brief, while its overall feel remains compatible with the atmosphere and pacing you described.`;
+    }
+
+    if (traits.length === 1) {
+        return `This track fits the ${traits[0]} direction in your brief and remained one of Nova's strongest overall matches.`;
+    }
+
+    return "This track remained one of Nova's strongest overall fits for the sound, atmosphere, and movement described in your brief.";
+}
+
+function stopNovaPreview(index = null) {
+    const targets = index === null
+        ? $$(".nova-preview-host")
+        : [document.querySelector(`[data-preview-host="${index}"]`)].filter(Boolean);
+
+    targets.forEach(host => {
+        host.innerHTML = "";
+        host.classList.add("hidden");
+        host.closest(".song-card")?.classList.remove("previewing");
+    });
+
+    $$(".preview-song").forEach(button => {
+        if (
+            index === null
+            ||
+            Number(button.dataset.index) === Number(index)
+        ) {
+            button.textContent = "Listen";
+            button.removeAttribute("disabled");
+        }
+    });
+
+    if (
+        index === null
+        ||
+        Number(currentNovaPreviewIndex) === Number(index)
+    ) {
+        currentNovaPreviewIndex = null;
+    }
+}
+
+async function toggleNovaPreview(results, index, button) {
+    const song = results[index];
+    const host = document.querySelector(`[data-preview-host="${index}"]`);
+
+    if (!song || !host) {
+        return;
+    }
+
+    if (Number(currentNovaPreviewIndex) === Number(index) && !host.classList.contains("hidden")) {
+        stopNovaPreview(index);
+        return;
+    }
+
+    stopNovaPreview();
+
+    button.setAttribute("disabled", "");
+    button.textContent = "Finding audio…";
+
+    const cacheKey = `${song.title}::${song.artist}`.toLowerCase();
+
+    try {
+        let preview = novaPreviewCache.get(cacheKey);
+
+        if (!preview) {
+            const data = await fetchPulsarJson(
+                "/pulsar/resolve",
+                {
+                    method: "POST",
+                    body: {
+                        title: song.title,
+                        artist: song.artist,
+                        mbid: song.mbid || null
+                    },
+                    timeoutMs: 35000
+                }
+            );
+
+            const track = data?.track || {};
+            const videoId = track.video_id;
+
+            if (!videoId || track.embeddable === false) {
+                throw new Error("A playable canonical audio source was not available for this track.");
+            }
+
+            preview = {
+                videoId,
+                title: track.youtube_title || song.title,
+                channelTitle: track.channel_title || song.artist
+            };
+
+            novaPreviewCache.set(cacheKey, preview);
+        }
+
+        host.innerHTML = `
+            <div class="nova-preview-frame">
+                <iframe
+                    src="https://www.youtube-nocookie.com/embed/${encodeURIComponent(preview.videoId)}?autoplay=1&rel=0&modestbranding=1"
+                    title="Preview ${escapeHtml(song.title)} by ${escapeHtml(song.artist)}"
+                    loading="lazy"
+                    allow="autoplay; encrypted-media; picture-in-picture"
+                    allowfullscreen
+                ></iframe>
+            </div>
+            <div class="nova-preview-meta">
+                <span>Canonical audio preview</span>
+                <small>${escapeHtml(preview.channelTitle)}</small>
+            </div>
+        `;
+
+        host.classList.remove("hidden");
+        host.closest(".song-card")?.classList.add("previewing");
+        currentNovaPreviewIndex = index;
+        button.textContent = "Stop preview";
+    } catch (error) {
+        console.error("Nova preview error:", error);
+        button.textContent = "Listen";
+        showToast(error?.message || "This track could not be previewed right now.");
+    } finally {
+        button.removeAttribute("disabled");
+    }
+}
+
 function renderSongResults(results) {
+    stopNovaPreview();
+
     $("#songResults").innerHTML =
         results
-            .map(
-                (
-                    song,
-                    index
-                ) => {
-                    const matchedTagsText =
-                        song.matchedTags.length
+            .map((song, index) => {
+                const traits = humanizeNovaTraits(song);
+                const traitMarkup = traits.length
+                    ? `
+                        <div class="song-traits">
+                            ${traits.map(trait => `<span>${escapeHtml(trait)}</span>`).join("")}
+                        </div>
+                    `
+                    : "";
 
-                            ? song
-                                .matchedTags
-                                .join(", ")
+                return `
+                    <article class="song-card" data-song-index="${index}">
+                        <div
+                            class="song-art"
+                            style="
+                                --art-a:${song.colors[0]};
+                                --art-b:${song.colors[1]};
+                            "
+                        >
+                            <span class="match-badge">${novaOptionLabel(index)}</span>
+                            <div class="song-art-rank">
+                                <strong>${novaRankLabel(index)}</strong>
+                                <small>Nova shortlist</small>
+                            </div>
+                        </div>
 
-                            : "Semantic profile match";
-
-                    const profileTagsText =
-                        song.topTags
-                            .slice(
-                                0,
-                                3
-                            )
-                            .join(", ");
-
-                    const lastfmLink =
-                        song.lastfmUrl
-
-                            ? `
-                                <a
-                                    class="song-source-link"
-                                    href="${escapeHtml(song.lastfmUrl)}"
-                                    target="_blank"
-                                    rel="noopener noreferrer"
-                                >
-                                    View on Last.fm ↗
-                                </a>
-                            `
-
-                            : "";
-
-                    return `
-                        <article class="song-card">
-
-                            <div
-                                class="song-art"
-                                style="
-                                    --art-a:${song.colors[0]};
-                                    --art-b:${song.colors[1]};
-                                "
-                            >
-                                <span class="match-badge">
-                                    Nova ${song.score}
-                                </span>
+                        <div class="song-body">
+                            <div class="song-meta">
+                                <div>
+                                    <p class="song-rank-copy">${novaOptionLabel(index)} · ${novaRankLabel(index)}</p>
+                                    <h3>${escapeHtml(song.title)}</h3>
+                                    <p>${escapeHtml(song.artist)}</p>
+                                </div>
                             </div>
 
-                            <div class="song-body">
+                            <p class="song-fit-copy">
+                                ${escapeHtml(buildNovaFitCopy(song))}
+                            </p>
 
-                                <div class="song-meta">
+                            ${traitMarkup}
 
-                                    <div>
-                                        <h3>
-                                            ${escapeHtml(song.title)}
-                                        </h3>
+                            <div
+                                class="nova-preview-host hidden"
+                                data-preview-host="${index}"
+                            ></div>
 
-                                        <p>
-                                            ${escapeHtml(song.artist)}
-                                        </p>
-                                    </div>
-
-                                    <span class="pill">
-                                        ${
-                                            index === 0
-                                                ? "Best match"
-                                                : `Option ${index + 1}`
-                                        }
-                                    </span>
-
-                                </div>
-
-
-                                <div class="song-details">
-
-                                    <div class="song-detail">
-                                        <span>
-                                            Nova score
-                                        </span>
-
-                                        <strong>
-                                            ${song.score}
-                                        </strong>
-                                    </div>
-
-                                    <div class="song-detail">
-                                        <span>
-                                            Semantic
-                                        </span>
-
-                                        <strong>
-                                            ${escapeHtml(song.semanticLabel)}
-                                        </strong>
-                                    </div>
-
-                                    <div class="song-detail">
-                                        <span>
-                                            Tag signals
-                                        </span>
-
-                                        <strong>
-                                            ${song.matchedTags.length}
-                                        </strong>
-                                    </div>
-
-                                </div>
-
-
-                                <ul class="fit-reasons">
-
-                                    <li>
-                                        ${escapeHtml(song.reason)}
-                                    </li>
-
-                                    <li>
-                                        Matched: ${escapeHtml(matchedTagsText)}
-                                    </li>
-
-                                    ${
-                                        profileTagsText
-                                            ? `
-                                                <li>
-                                                    Last.fm profile: ${escapeHtml(profileTagsText)}
-                                                </li>
-                                            `
-                                            : ""
-                                    }
-
-                                </ul>
-
-                                ${lastfmLink}
+                            <div class="song-card-actions">
+                                <button
+                                    class="button ghost preview-song"
+                                    data-index="${index}"
+                                    type="button"
+                                >
+                                    Listen
+                                </button>
 
                                 <button
                                     class="button primary choose-song"
@@ -1998,43 +2193,41 @@ function renderSongResults(results) {
                                 >
                                     Choose this song
                                 </button>
-
                             </div>
-
-                        </article>
-                    `;
-                }
-            )
+                        </div>
+                    </article>
+                `;
+            })
             .join("");
 
-    $$(".choose-song")
-        .forEach(
-            button => {
+    $$(".preview-song").forEach(button => {
+        button.addEventListener("click", () => {
+            toggleNovaPreview(
+                results,
+                Number(button.dataset.index),
                 button
-                    .addEventListener(
-                        "click",
-                        async () => {
-                            const index =
-                                Number(
-                                    button.dataset.index
-                                );
+            );
+        });
+    });
 
-                            selectedTrack =
-                                results[index]
-                                ||
-                                null;
+    $$(".choose-song").forEach(button => {
+        button.addEventListener("click", async () => {
+            const index = Number(button.dataset.index);
 
-                            if (!selectedTrack) {
-                                return;
-                            }
+            selectedTrack =
+                results[index]
+                ||
+                null;
 
-                            await saveSelectedNovaTrack();
-
-                            openHandoff();
-                        }
-                    );
+            if (!selectedTrack) {
+                return;
             }
-        );
+
+            stopNovaPreview();
+            await saveSelectedNovaTrack();
+            openHandoff();
+        });
+    });
 }
 
 function openHandoff() {
@@ -2042,36 +2235,29 @@ function openHandoff() {
         return;
     }
 
-    const tags =
-        selectedTrack
-            .matchedTags
-            .slice(
-                0,
-                2
-            )
-            .join(", ");
+    const rankIndex = Math.max(
+        0,
+        Number(selectedTrack.rank || 1) - 1
+    );
 
-    $("#handoffTrack").innerHTML =
-        `
-            <strong>
-                ${escapeHtml(selectedTrack.title)}
-                —
-                ${escapeHtml(selectedTrack.artist)}
-            </strong>
+    const traits = humanizeNovaTraits(selectedTrack)
+        .slice(0, 2)
+        .join(", ");
 
-            <small>
-                Nova score ${selectedTrack.score}
-                ${
-                    tags
-                        ? ` · ${escapeHtml(tags)}`
-                        : ""
-                }
-            </small>
-        `;
+    $("#handoffTrack").innerHTML = `
+        <strong>
+            ${escapeHtml(selectedTrack.title)}
+            —
+            ${escapeHtml(selectedTrack.artist)}
+        </strong>
 
-    $("#handoffModal")
-        .classList
-        .remove("hidden");
+        <small>
+            ${novaOptionLabel(rankIndex)} · ${novaRankLabel(rankIndex)}
+            ${traits ? ` · ${escapeHtml(traits)}` : ""}
+        </small>
+    `;
+
+    $("#handoffModal")?.classList.remove("hidden");
 }
 
 // =====================================================
@@ -2113,6 +2299,9 @@ $('#changeTrackButton')
 
             currentNovaProfile =
                 null;
+
+            currentPulsarEditDurationSeconds =
+                30;
 
             $("#selectedTrackBanner")
                 .classList
@@ -2739,19 +2928,38 @@ function priorityFromChangeScore(score) {
         Number(score) ||
         0;
 
-    if (
-        numericScore >= 85
-    ) {
+    if (numericScore >= 85) {
         return "primary";
     }
 
-    if (
-        numericScore >= 60
-    ) {
+    if (numericScore >= 60) {
         return "secondary";
     }
 
-    return "optional";
+    return "tertiary";
+}
+
+function normalizeCuePriority(priority, score = 0) {
+    const normalized =
+        String(priority || "")
+            .trim()
+            .toLowerCase();
+
+    if (normalized === "optional") {
+        return "tertiary";
+    }
+
+    if (
+        normalized === "primary"
+        ||
+        normalized === "secondary"
+        ||
+        normalized === "tertiary"
+    ) {
+        return normalized;
+    }
+
+    return priorityFromChangeScore(score);
 }
 
 function inferCueType(
@@ -3210,10 +3418,8 @@ $("#loadDemoBlueprint")
             $("#blueprintArtist").value =
                 "HOME";
 
-            if ($("#pulsarEditDuration")) {
-                $("#pulsarEditDuration").value =
-                    "30";
-            }
+            currentPulsarEditDurationSeconds =
+                30;
 
             $("#musicProfile").value =
                 "dynamic";
@@ -3247,25 +3453,12 @@ $("#blueprintForm")
                 $("#musicProfile")
                     .value;
 
-            const editDurationValue =
-                $("#pulsarEditDuration")
-                    ?.value
-                ||
-                "30";
-
             const editDurationSeconds =
-                editDurationValue === "full"
-                    ? null
-                    : Number(
-                        editDurationValue
-                    );
-
-            const density =
-                $(
-                    'input[name="density"]:checked'
-                )?.value
+                Number(
+                    currentPulsarEditDurationSeconds
+                )
                 ||
-                "balanced";
+                30;
 
             const selectedTypes =
                 $$(
@@ -3422,7 +3615,7 @@ $("#blueprintForm")
                 setPulsarProgress(
                     "signal",
                     "Building your Signal…",
-                    "Pulsar is selecting the strongest measured moments and turning them into editing suggestions."
+                    "Pulsar is mapping the measured transitions in the selected window and turning them into editing suggestions."
                 );
 
                 const signalData =
@@ -3437,8 +3630,6 @@ $("#blueprintForm")
                                     String(
                                         libraryTrackId
                                     ),
-
-                                density,
 
                                 editing_context:
                                     editingContext,
@@ -3506,7 +3697,10 @@ $("#blueprintForm")
                                     ),
 
                                 priority:
-                                    priorityFromChangeScore(
+                                    normalizeCuePriority(
+                                        cue.priority
+                                        ||
+                                        cue?.objective?.tier,
                                         changeScore
                                     ),
 
@@ -3606,7 +3800,13 @@ $("#blueprintForm")
 
                     musicProfile,
 
-                    density,
+                    density:
+                        "balanced",
+
+                    keypointMode:
+                        signalData?.keypoint_mode
+                        ||
+                        "all-ranked-transitions",
 
                     selectedTypes,
 
@@ -3624,7 +3824,7 @@ $("#blueprintForm")
                             ?.signal
                             ?.summary
                         ||
-                        "Pulsar identified the strongest measured changes in the track.",
+                        "Pulsar mapped the measured musical changes in the selected source window.",
 
                     analysis:
                         mergedAnalysis,
@@ -3686,31 +3886,236 @@ $("#blueprintForm")
         }
     );
 
-function renderBlueprint(blueprint) {
-    $("#outputTitle")
-        .textContent =
-        blueprint.artist
-            ? `${blueprint.song} — ${blueprint.artist}`
-            : blueprint.song;
+function getSignalLayerLabel(priority) {
+    const normalized = normalizeCuePriority(priority);
 
-    $("#outputSummary")
-        .textContent =
-        blueprint.summary
-        ||
-        `${blueprint.cues.length} suggested edit points across ${
-            formatTime(
-                blueprint.duration
+    if (normalized === "primary") return "Primary";
+    if (normalized === "secondary") return "Secondary";
+    return "Tertiary";
+}
+
+function syncSignalLayerStateFromControls() {
+    activeSignalLayers.clear();
+
+    $$('input[name="signalLayer"]:checked').forEach(input => {
+        activeSignalLayers.add(
+            normalizeCuePriority(input.value)
+        );
+    });
+}
+
+function getVisibleSignalCues(blueprint) {
+    syncSignalLayerStateFromControls();
+
+    return (blueprint?.cues || []).filter(cue =>
+        activeSignalLayers.has(
+            normalizeCuePriority(
+                cue.priority,
+                cue.changeScore
             )
-        }.`;
+        )
+    );
+}
+
+function openCueDetail(cue) {
+    const modal = $("#cueDetailModal");
+
+    if (!modal || !cue) {
+        return;
+    }
+
+    const priority =
+        normalizeCuePriority(
+            cue.priority,
+            cue.changeScore
+        );
+
+    $("#cueDetailEyebrow").textContent =
+        `${getSignalLayerLabel(priority)} key point · ${cue.time}`;
+
+    $("#cueDetailTitle").textContent =
+        cue.title
+        ||
+        "Musical change";
+
+    $("#cueDetailMeta").innerHTML = `
+        <span class="priority-chip ${escapeHtml(priority)}">
+            ${escapeHtml(getSignalLayerLabel(priority))}
+        </span>
+        <span>${escapeHtml(cue.type ? capitalize(cue.type) : "Editing opportunity")}</span>
+    `;
+
+    $("#cueDetailMoment").textContent =
+        cue.moment
+        ||
+        "A meaningful musical change was detected here.";
+
+    $("#cueDetailSuggestion").textContent =
+        cue.suggestion
+        ||
+        "Consider changing the visual treatment here.";
+
+    modal.classList.remove("hidden");
+}
+
+function renderPulsarTimeline(blueprint) {
+    const timeline = $("#visualTimeline");
+
+    if (!timeline) {
+        return;
+    }
 
     const editWindow =
         getBlueprintEditWindow(
             blueprint
         );
 
-    $("#cueCount")
-        .textContent =
-        `${blueprint.cues.length} cues · ${formatTime(editWindow.durationSeconds)} window`;
+    const colors = {
+        primary:
+            "var(--accent)",
+
+        secondary:
+            "var(--blue)",
+
+        tertiary:
+            "var(--purple)"
+    };
+
+    const visibleCues =
+        getVisibleSignalCues(
+            blueprint
+        );
+
+    const layerNames =
+        [...activeSignalLayers]
+            .map(
+                layer =>
+                    getSignalLayerLabel(
+                        layer
+                    )
+            );
+
+    const status =
+        $("#timelineLayerStatus");
+
+    if (status) {
+        status.textContent =
+            layerNames.length
+                ? `Showing ${layerNames.join(", ")}`
+                : "No timeline layers selected";
+    }
+
+    const cueCount =
+        $("#cueCount");
+
+    if (cueCount) {
+        cueCount.textContent =
+            `${visibleCues.length} shown · ${blueprint.cues.length} mapped`;
+    }
+
+    timeline.innerHTML =
+        visibleCues
+            .map(cue => {
+                const priority =
+                    normalizeCuePriority(
+                        cue.priority,
+                        cue.changeScore
+                    );
+
+                const percentage =
+                    Math.max(
+                        0,
+                        Math.min(
+                            100,
+                            (
+                                (
+                                    cue.seconds
+                                    -
+                                    editWindow.startSeconds
+                                )
+                                /
+                                Math.max(
+                                    editWindow.durationSeconds,
+                                    1
+                                )
+                            )
+                            *
+                            100
+                        )
+                    );
+
+                const edgeClass =
+                    percentage < 18
+                        ? "edge-left"
+                        : percentage > 82
+                            ? "edge-right"
+                            : "";
+
+                return `
+                    <button
+                        class="timeline-marker ${escapeHtml(priority)} ${edgeClass}"
+                        type="button"
+                        data-cue-number="${escapeHtml(cue.cueNumber || "")}"
+                        data-time="${escapeHtml(cue.time)}"
+                        aria-label="${escapeHtml(`${getSignalLayerLabel(priority)} key point at ${cue.time}: ${cue.title || cue.moment}`)}"
+                        style="
+                            left:${percentage}%;
+                            --marker:${colors[priority] || "var(--purple)"};
+                        "
+                    >
+                        <span class="timeline-marker-core" aria-hidden="true"></span>
+                        <span class="timeline-tooltip" aria-hidden="true">
+                            <small>${escapeHtml(cue.time)} · ${escapeHtml(getSignalLayerLabel(priority))}</small>
+                            <strong>${escapeHtml(cue.title || "Musical change")}</strong>
+                            <span>${escapeHtml(cue.moment || "")}</span>
+                            <em>Click for full details</em>
+                        </span>
+                    </button>
+                `;
+            })
+            .join("");
+
+    $$(".timeline-marker").forEach((button, visibleIndex) => {
+        button.addEventListener("click", () => {
+            const visibleCue = visibleCues[visibleIndex];
+            openCueDetail(visibleCue);
+        });
+    });
+}
+
+function renderBlueprint(blueprint) {
+    blueprint.cues =
+        (blueprint.cues || [])
+            .map((cue, index) => ({
+                ...cue,
+                cueNumber:
+                    cue.cueNumber
+                    ||
+                    cue.cue_number
+                    ||
+                    index + 1,
+
+                priority:
+                    normalizeCuePriority(
+                        cue.priority,
+                        cue.changeScore
+                    )
+            }));
+
+    $("#outputTitle").textContent =
+        blueprint.artist
+            ? `${blueprint.song} — ${blueprint.artist}`
+            : blueprint.song;
+
+    $("#outputSummary").textContent =
+        blueprint.summary
+        ||
+        `${blueprint.cues.length} mapped edit points across ${formatTime(blueprint.duration)}.`;
+
+    const editWindow =
+        getBlueprintEditWindow(
+            blueprint
+        );
 
     const timelineWindowLabel =
         $("#timelineWindowLabel");
@@ -3718,219 +4123,110 @@ function renderBlueprint(blueprint) {
     if (timelineWindowLabel) {
         timelineWindowLabel.textContent =
             editWindow.usesExcerpt
-                ? `Suggested source window: ${formatTime(editWindow.startSeconds)}–${formatTime(editWindow.endSeconds)} of ${formatTime(blueprint.duration)}. Cue times below are absolute song times.`
-                : `Full-track Signal across ${formatTime(blueprint.duration)}. Cue times below are absolute song times.`;
+                ? `Suggested source window: ${formatTime(editWindow.startSeconds)}–${formatTime(editWindow.endSeconds)} of ${formatTime(blueprint.duration)}. Cue times are absolute song times.`
+                : `Full-track Signal across ${formatTime(blueprint.duration)}. Cue times are absolute song times.`;
     }
 
     renderSignalAnalysis(
         blueprint
     );
 
-    const colors = {
-        primary:
-            "var(--pulsar)",
+    renderPulsarTimeline(
+        blueprint
+    );
 
-        secondary:
-            "var(--accent)",
-
-        optional:
-            "var(--purple)"
-    };
-
-    $("#visualTimeline")
-        .innerHTML =
+    $("#cueTableBody").innerHTML =
         blueprint.cues
-            .map(
-                (
-                    cue,
-                    index
-                ) => {
-                    const percentage =
-                        Math.max(
-                            0,
-                            Math.min(
-                                100,
-                                (
-                                    (
-                                        cue.seconds
-                                        -
-                                        editWindow.startSeconds
-                                    )
-                                    /
-                                    Math.max(
-                                        editWindow.durationSeconds,
-                                        1
-                                    )
-                                )
-                                *
-                                100
-                            )
-                        );
-
-                    return `
-                        <button
-                            class="timeline-marker"
-                            type="button"
-                            data-time="${escapeHtml(cue.time)}"
-                            title="${escapeHtml(
-                                cue.title ||
-                                cue.moment
-                            )}"
-                            style="
-                                left:${percentage}%;
-                                --marker:${colors[cue.priority] || "var(--pulsar)"};
-                                --label-top:${index % 2 ? "24px" : "-42px"};
-                            "
-                        ></button>
-                    `;
-                }
-            )
-            .join("");
-
-    $("#cueTableBody")
-        .innerHTML =
-        blueprint.cues
-            .map(
-                (
-                    cue,
-                    index
-                ) => {
-                    const scoreMarkup =
-                        Number.isFinite(
-                            Number(
-                                cue.changeScore
-                            )
-                        )
-                        &&
-                        Number(
-                            cue.changeScore
-                        ) > 0
-
-                            ? `
-                                <small class="cue-score">
-                                    ${Number(cue.changeScore)}/100
-                                </small>
-                            `
-
-                            : "";
-
-                    return `
-                        <tr>
-
-                            <td>
-                                <strong>
-                                    ${escapeHtml(cue.time)}
-                                </strong>
-                            </td>
-
-                            <td>
-
-                                <span
-                                    class="priority-chip ${escapeHtml(cue.priority)}"
-                                >
-                                    ${escapeHtml(
-                                        capitalize(
-                                            cue.priority
-                                        )
-                                    )}
-                                </span>
-
-                                ${scoreMarkup}
-
-                            </td>
-
-                            <td>
-
-                                <div class="cue-moment">
-
-                                    <strong>
-                                        ${escapeHtml(
-                                            cue.title ||
-                                            "Musical change"
-                                        )}
-                                    </strong>
-
-                                    <small>
-                                        ${escapeHtml(
-                                            cue.moment
-                                        )}
-                                    </small>
-
-                                </div>
-
-                            </td>
-
-                            <td>
-                                ${escapeHtml(
-                                    cue.suggestion
-                                )}
-                            </td>
-
-                            <td>
-
-                                <button
-                                    class="table-action edit-cue"
-                                    data-index="${index}"
-                                    aria-label="Edit suggestion"
-                                >
-                                    ✎
-                                </button>
-
-                            </td>
-
-                        </tr>
-                    `;
-                }
-            )
-            .join("");
-
-    $$(".edit-cue")
-        .forEach(
-            button => {
-                button
-                    .addEventListener(
-                        "click",
-                        () => {
-                            const cue =
-                                currentBlueprint
-                                    .cues[
-                                        Number(
-                                            button.dataset.index
-                                        )
-                                    ];
-
-                            const newSuggestion =
-                                prompt(
-                                    "Edit this suggestion:",
-                                    cue.suggestion
-                                );
-
-                            if (
-                                newSuggestion
-                                    ?.trim()
-                            ) {
-                                cue.suggestion =
-                                    newSuggestion
-                                        .trim();
-
-                                renderBlueprint(
-                                    currentBlueprint
-                                );
-                            }
-                        }
+            .map((cue, index) => {
+                const priority =
+                    normalizeCuePriority(
+                        cue.priority,
+                        cue.changeScore
                     );
+
+                return `
+                    <tr>
+                        <td>
+                            <strong>${escapeHtml(cue.time)}</strong>
+                        </td>
+
+                        <td>
+                            <span class="priority-chip ${escapeHtml(priority)}">
+                                ${escapeHtml(getSignalLayerLabel(priority))}
+                            </span>
+                        </td>
+
+                        <td>
+                            <div class="cue-moment">
+                                <strong>${escapeHtml(cue.title || "Musical change")}</strong>
+                                <small>${escapeHtml(cue.moment || "")}</small>
+                            </div>
+                        </td>
+
+                        <td>
+                            ${escapeHtml(cue.suggestion || "")}
+                        </td>
+
+                        <td>
+                            <button
+                                class="table-action edit-cue"
+                                data-index="${index}"
+                                aria-label="Edit suggestion"
+                            >
+                                ✎
+                            </button>
+                        </td>
+                    </tr>
+                `;
+            })
+            .join("");
+
+    $$(".edit-cue").forEach(button => {
+        button.addEventListener("click", () => {
+            const cue =
+                currentBlueprint
+                    .cues[
+                        Number(
+                            button.dataset.index
+                        )
+                    ];
+
+            const newSuggestion =
+                prompt(
+                    "Edit this suggestion:",
+                    cue.suggestion
+                );
+
+            if (newSuggestion?.trim()) {
+                cue.suggestion =
+                    newSuggestion.trim();
+
+                renderBlueprint(
+                    currentBlueprint
+                );
             }
-        );
-
-    $("#blueprintOutput")
-        .classList
-        .remove("hidden");
-
-    $("#blueprintOutput")
-        .scrollIntoView({
-            behavior: "smooth"
         });
+    });
+
+    $("#blueprintOutput")?.classList.remove("hidden");
+
+    $("#blueprintOutput")?.scrollIntoView({
+        behavior: "smooth",
+        block: "start"
+    });
 }
+
+$$('input[name="signalLayer"]').forEach(input => {
+    input.addEventListener("change", () => {
+        syncSignalLayerStateFromControls();
+
+        if (currentBlueprint) {
+            renderPulsarTimeline(
+                currentBlueprint
+            );
+        }
+    });
+});
 
 // =====================================================
 // PULSAR DATABASE
@@ -4391,24 +4687,15 @@ function openSavedSignal(signal) {
         signal.musicProfile ||
         "dynamic";
 
-    if ($("#pulsarEditDuration")) {
-        // Existing Echoes do not yet persist excerpt metadata,
-        // so reopen them as full-track Signals.
-        $("#pulsarEditDuration").value =
-            "full";
-    }
+    currentPulsarEditDurationSeconds =
+        Number(
+            signal.editDuration
+        )
+        ||
+        30;
 
     $("#pulsarEditingContext").value =
         "";
-
-    $$('input[name="density"]')
-        .forEach(
-            input => {
-                input.checked =
-                    input.value ===
-                    signal.density;
-            }
-        );
 
     $$('input[name="cueType"]')
         .forEach(
@@ -4922,7 +5209,7 @@ function setAuthMode(mode) {
         ? {
             eyebrow: 'Create your workspace',
             title: 'Create a Syncora account.',
-            intro: 'Save Nova decisions, capture Signals, and return to your work from Echoes.'
+            intro: 'Choose how Syncora should greet you, then save Nova decisions, capture Signals, and return to your work from Echoes.'
         }
         : {
             eyebrow: 'Welcome back',
@@ -4934,11 +5221,21 @@ function setAuthMode(mode) {
     $('#authTitle')?.replaceChildren(document.createTextNode(copy.title));
     $('#authIntro')?.replaceChildren(document.createTextNode(copy.intro));
 
-    $$('[data-auth-mode]').forEach(button => {
+    $$('.auth-mode-button').forEach(button => {
         const active = button.dataset.authMode === nextMode;
         button.classList.toggle('active', active);
         button.setAttribute('aria-selected', active ? 'true' : 'false');
     });
+
+    if (authDisplayNameInput) {
+        const creatingAccount = nextMode === 'signup';
+        authDisplayNameInput.disabled = !creatingAccount;
+        authDisplayNameInput.required = creatingAccount;
+
+        if (!creatingAccount) {
+            authDisplayNameInput.value = '';
+        }
+    }
 
     if (authPasswordInput) {
         authPasswordInput.autocomplete = nextMode === 'signup' ? 'new-password' : 'current-password';
@@ -4951,6 +5248,88 @@ function setAuthMode(mode) {
 $$('.auth-mode-button').forEach(button => {
     button.addEventListener('click', () => setAuthMode(button.dataset.authMode));
 });
+
+
+function initAuthJumpLinks() {
+    $$('[data-auth-jump]').forEach(link => {
+        link.addEventListener('click', () => {
+            const mode = link.dataset.authJump || 'login';
+            setAuthMode(mode);
+
+            window.setTimeout(() => {
+                if (mode === 'signup') {
+                    authDisplayNameInput?.focus({ preventScroll: true });
+                } else {
+                    authEmailInput?.focus({ preventScroll: true });
+                }
+            }, 500);
+        });
+    });
+}
+
+function initScrollReveal() {
+    const elements = $$('.reveal-on-scroll');
+
+    if (!elements.length) {
+        return;
+    }
+
+    if (
+        window.matchMedia
+        &&
+        window.matchMedia('(prefers-reduced-motion: reduce)').matches
+    ) {
+        elements.forEach(element => element.classList.add('is-visible'));
+        return;
+    }
+
+    const observer = new IntersectionObserver(
+        entries => {
+            entries.forEach(entry => {
+                if (!entry.isIntersecting) return;
+                entry.target.classList.add('is-visible');
+                observer.unobserve(entry.target);
+            });
+        },
+        {
+            rootMargin: '0px 0px -10% 0px',
+            threshold: 0.12
+        }
+    );
+
+    elements.forEach(element => observer.observe(element));
+}
+
+function initLandingScrollDynamics() {
+    if (PAGE_KIND !== 'auth') {
+        return;
+    }
+
+    const root = document.documentElement;
+
+    const update = () => {
+        const scrollRange =
+            Math.max(
+                document.documentElement.scrollHeight - window.innerHeight,
+                1
+            );
+
+        const progress =
+            Math.min(
+                1,
+                Math.max(
+                    0,
+                    window.scrollY / scrollRange
+                )
+            );
+
+        root.style.setProperty('--landing-scroll', progress.toFixed(4));
+        root.style.setProperty('--landing-scroll-px', `${window.scrollY}px`);
+    };
+
+    update();
+    window.addEventListener('scroll', update, { passive: true });
+}
 
 function restorePulsarHandoff() {
     if (CURRENT_PAGE !== 'pulsar-workflow' || !$('#blueprintForm')) {
@@ -4971,18 +5350,23 @@ function restorePulsarHandoff() {
         $('#blueprintSong').value = track.title;
         $('#blueprintArtist').value = track.artist;
 
-        if ($('#pulsarEditDuration') && handoff.targetDuration) {
-            $('#pulsarEditDuration').value = handoff.targetDuration;
-        }
+        currentPulsarEditDurationSeconds =
+            Number(handoff.targetDuration)
+            ||
+            30;
 
         if ($('#pulsarEditingContext') && handoff.creativeIntent) {
             $('#pulsarEditingContext').value = handoff.creativeIntent;
         }
 
         const tags = (track.matchedTags || []).slice(0, 2).join(', ');
+        const rankIndex = Math.max(0, Number(track.rank || 1) - 1);
+
         $('#selectedTrackName').textContent = `${track.title} — ${track.artist}`;
         $('#selectedTrackMeta').textContent =
-            `Nova score ${track.score ?? '—'}` + (tags ? ` · ${tags}` : '');
+            `${novaOptionLabel(rankIndex)} · ${novaRankLabel(rankIndex)}` +
+            (tags ? ` · ${tags}` : '') +
+            ` · ${currentPulsarEditDurationSeconds}s edit`;
         $('#selectedTrackBanner').classList.remove('hidden');
     } catch (error) {
         console.error('Could not restore Nova → Pulsar handoff:', error);
@@ -5017,7 +5401,7 @@ function restoreDeferredSignal() {
 }
 
 function initCosmicPointer() {
-    $$('.auth-visual, .module-intro, .hero-card').forEach(surface => {
+    $$('.auth-visual, .landing-tool-card, .landing-principle, .module-intro, .hero-card').forEach(surface => {
         surface.addEventListener('pointermove', event => {
             const rect = surface.getBoundingClientRect();
             const x = ((event.clientX - rect.left) / rect.width) * 100;
@@ -5029,6 +5413,9 @@ function initCosmicPointer() {
 }
 
 setAuthMode(document.body.dataset.authMode || 'login');
+initAuthJumpLinks();
+initScrollReveal();
+initLandingScrollDynamics();
 restorePulsarHandoff();
 restoreDeferredSignal();
 initCosmicPointer();

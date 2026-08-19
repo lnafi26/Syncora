@@ -50,7 +50,7 @@
     <div class="editorial-kicker"><p class="eyebrow">From brief to decision</p><h2>Describe the edit. Narrow the search. Choose with context.</h2></div>
     <div class="editorial-grid three-up">
         <article class="editorial-card"><span>01</span><h3>Brief the feeling</h3><p>Define mood, pace, structure, vocal preference, and the visual intention the music needs to support.</p></article>
-        <article class="editorial-card"><span>02</span><h3>Compare three tracks</h3><p>Nova keeps the result set intentionally small and ranks real tracks against the musical profile it derived from your brief.</p></article>
+        <article class="editorial-card"><span>02</span><h3>Compare three tracks</h3><p>Nova keeps the result set intentionally small, ranks three real tracks against your brief, and lets you listen before you commit.</p></article>
         <article class="editorial-card"><span>03</span><h3>Carry it forward</h3><p>Choose a track and move it directly into Pulsar when you are ready to map the edit.</p></article>
     </div>
     <div class="center-cta"><a class="button primary" href="nova-workflow.html">Start a Nova brief →</a></div>
@@ -63,6 +63,15 @@
         <p class="eyebrow">Account</p>
         <h2 id="signedInName">Signed in</h2>
         <p id="signedInEmail"></p>
+        <div class="account-profile-editor">
+            <label class="field">
+                <span>Display name</span>
+                <input id="profileDisplayName" type="text" maxlength="50" autocomplete="nickname" placeholder="How Syncora should greet you">
+            </label>
+            <button class="button ghost small" id="saveDisplayNameButton" type="button">Save display name</button>
+            <p class="profile-message" id="displayNameMessage" role="status" aria-live="polite"></p>
+        </div>
+
         <div class="account-summary">
             <div><strong id="accountBlueprintCount">0</strong><span>Captured Signals</span></div>
             <div><strong>Supabase</strong><span>Authentication</span></div>

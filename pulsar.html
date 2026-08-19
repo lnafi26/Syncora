@@ -60,7 +60,7 @@
     <div class="editorial-kicker"><p class="eyebrow">A Signal, not an autopilot</p><h2>Objective musical moments. Practical editing opportunities. Your judgment stays in control.</h2></div>
     <div class="editorial-grid three-up">
         <article class="editorial-card"><span>01</span><h3>Resolve the recording</h3><p>Pulsar matches the exact song you chose so the analysis stays attached to the right source.</p></article>
-        <article class="editorial-card"><span>02</span><h3>Surface meaningful change</h3><p>The Signal focuses on stronger musical transition regions instead of treating every beat as equally important.</p></article>
+        <article class="editorial-card"><span>02</span><h3>Surface meaningful change</h3><p>The Signal maps the measured transition regions in the chosen source window, then separates them into Primary, Secondary, and Tertiary layers.</p></article>
         <article class="editorial-card"><span>03</span><h3>Translate for the timeline</h3><p>Each cue becomes an editor-facing opportunity for cuts, transitions, pacing, effects, and visual emphasis.</p></article>
     </div>
     <div class="center-cta"><a class="button primary pulsar-cta" href="pulsar-workflow.html">Create a Signal →</a></div>
@@ -73,6 +73,15 @@
         <p class="eyebrow">Account</p>
         <h2 id="signedInName">Signed in</h2>
         <p id="signedInEmail"></p>
+        <div class="account-profile-editor">
+            <label class="field">
+                <span>Display name</span>
+                <input id="profileDisplayName" type="text" maxlength="50" autocomplete="nickname" placeholder="How Syncora should greet you">
+            </label>
+            <button class="button ghost small" id="saveDisplayNameButton" type="button">Save display name</button>
+            <p class="profile-message" id="displayNameMessage" role="status" aria-live="polite"></p>
+        </div>
+
         <div class="account-summary">
             <div><strong id="accountBlueprintCount">0</strong><span>Captured Signals</span></div>
             <div><strong>Supabase</strong><span>Authentication</span></div>
